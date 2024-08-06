@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh_CN">
+
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>镜像后台</title>
+    <meta name="renderer" content="webkit">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <link rel="stylesheet" href="/static/layui/css/layui.css" media="all">
+    <link id="layuicss-layer" rel="stylesheet" href="/static/layui/css/modules/layer/default/layer.css"
+        media="all">
+    <link id="layuicss-layuiAdmin" rel="stylesheet" href="/static/css/admin.css" media="all">
+</head>
+
+<body>
+    <div>
+        <div class="layadmin-tabsbody-item layui-show">
+            <div class="layui-fluid">
+                <div class="layui-row layui-col-space15">
+                    <div class="layui-col-md12">
+                        <div class="layui-card">
+                            <div class="layui-card-header">编辑</div>
+                            <div class="layui-card-body">
+                                <form class="layui-form">
+                                    <input type="hidden" name="id" value="{{.proxy_config.Id}}" />
+                                    <div class="layui-form-item">
+                                        <label class="layui-form-label">域名</label>
+                                        <div class="layui-input-block" style="width: 400px;">
+                                            <input type="text" name="domain" required lay-verify="required"
+                                                value="{{.proxy_config.Domain}}" placeholder="请输入域名" autocomplete="off"
+                                                class="layui-input">
+                                        </div>
+                                    </div>
+                                    <div class="layui-form-item">
+                                        <label class="layui-form-label">镜像链接</label>
+                                        <div class="layui-input-block" style="width: 400px;">
+                                            <input type="text" name="url" required lay-verify="required"
+                                                value="{{.proxy_config.Url}}" placeholder="请输入镜像链接" autocomplete="off"
+                                                class="layui-input">
+                                        </div>
+                                    </div>
+                                    <div class="layui-form-item">
+                                        <label class="layui-form-label">首页标题</label>
+                                        <div class="layui-input-block" style="width: 400px;">
+                                            <input type="text" name="index_title" required lay-verify="required"
+                                                value="{{.proxy_config.IndexTitle}}" placeholder="请输入首页标题"
+                                                autocomplete="off" class="layui-input">
+                                        </div>
+                                    </div>
+                                    <div class="layui-form-item">
+                                        <label class="layui-form-label">首页关键词</label>
+                                        <div class="layui-input-block" style="width: 400px;">
+                                            <input type="text" name="index_keywords" required lay-verify="required"
+                                                value="{{.proxy_config.IndexKeywords}}" placeholder="请输入首页关键词"
+                                                autocomplete="off" class="layui-input">
+                                        </div>
+                                    </div>
+                                    <div class="layui-form-item">
+                                        <label class="layui-form-label">首页描述</label>
+                                        <div class="layui-input-block" style="width: 500px;">
+                                            <input type="text" name="index_description" required lay-verify="required"
+                                                value="{{.proxy_config.IndexDescription}}" placeholder="请输入首页描述"
+                                                autocomplete="off" class="layui-input">
+                                        </div>
+                                    </div>
+    
+                                    <div class="layui-form-item">
+                                        <label class="layui-form-label">被替换词</label>
+                                        <div class="layui-input-inline" style="width: 500px">
+                                            {{$finds:= .proxy_config.Finds}}
+                                            <input type="text" name="finds" required lay-verify="required"
+                                                value="{{join $finds ";"}}" placeholder="请输入被替换词" autocomplete="off"
+                                                class="layui-input">
+                                        </div>
+                                        <div class="layui-form-mid layui-word-aux">每个词用 ; 号隔开</div>
+                                    </div>
+                                    <div class="layui-form-item">
+                                        <label class="layui-form-label">替换词</label>
+                                        <div class="layui-input-inline" style="width: 500px">
+                                            {{$replaces:= .proxy_config.Replaces}}
+    
+                                            <input type="text" name="replaces" required lay-verify="required"
+                                                value="{{join $replaces ";"}}" placeholder="请输入替换词" autocomplete="off"
+                                                class="layui-input">
+                                        </div>
+                                        <div class="layui-form-mid layui-word-aux">每个词用 ; 号隔开</div>
+                                    </div>
+    
+                                    <div class="layui-form-item">
+                                        <label class="layui-form-label">h1替换词</label>
+                                        <div class="layui-input-inline" style="width: 400px">
+                                            <input type="text" name="h1replace" value="{{.proxy_config.H1Replace }}"
+                                                placeholder="请输入h1替换词" autocomplete="off" class="layui-input">
+                                        </div>
+                                        <div class="layui-form-mid layui-word-aux">网页中&lt;h1&gt;中被替换的内容</div>
+                                    </div>
+                                    <div class="layui-form-item">
+                                        <div class="layui-inline">
+                                            <label class="layui-form-label">下载js</label>
+                                            <div class="layui-input-inline">
+                                                <input type="checkbox" name="need_js" lay-skin="switch" {{if .proxy_config.NeedJs}}checked{{end}}/>
+                                            </div>
+                                        </div>
+    
+                                        <div class="layui-inline">
+                                            <label class="layui-form-label">开启缓存</label>
+                                            <div class="layui-input-inline">
+                                                <input type="checkbox" name="cache_enable" lay-skin="switch" {{if .proxy_config.CacheEnable}}checked{{end}}/>
+                                            </div>
+                                        </div>
+                                        
+                                    </div>
+                                    <div class="layui-form-item">
+                                        <div class="layui-inline">
+                                            <label class="layui-form-label">转繁体</label>
+                                            <div class="layui-input-inline">
+                                                <input type="checkbox" name="s2t" {{if .proxy_config.S2t}}checked{{end}} lay-skin="switch" />
+                                            </div>
+                                        </div>
+    
+                                        <div class="layui-inline">
+                                            <label class="layui-form-label">标题替换</label>
+                                            <div class="layui-input-inline">
+                                                <input type="checkbox" name="title_replace" {{if .proxy_config.TitleReplace}}checked{{end}} lay-skin="switch" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="layui-form-item">
+                                        <label class="layui-form-label">缓存时间</label>
+                                        <div class="layui-input-inline" style="width: 400px;">
+                                            <input type="text" name="cache_time" required lay-verify="required"
+                                                value="{{.proxy_config.CacheTime}}" placeholder="请输入缓存时间" autocomplete="off"
+                                                class="layui-input">
+                                        </div>
+                                        <div class="layui-form-mid layui-word-aux">单位(分钟)</div>
+                                    </div>
+                                    <div class="layui-form-item">
+                                        <label class="layui-form-label">百度推送key</label>
+                                        <div class="layui-input-inline" style="width: 400px;">
+                                            <input type="text" name="baidu_push_key" value="{{.proxy_config.BaiduPushKey}}"
+                                                placeholder="请输入百度推送key" autocomplete="off" class="layui-input">
+                                        </div>
+                                        <div class="layui-form-mid layui-word-aux">暂时未实现</div>
+                                    </div>
+                                    <div class="layui-form-item">
+                                        <label class="layui-form-label">神马推送key</label>
+                                        <div class="layui-input-inline" style="width: 400px;">
+                                            <input type="text" name="sm_push_key" value="{{.proxy_config.SmPushKey}}"
+                                                placeholder="神马推送key" autocomplete="off" class="layui-input">
+                                        </div>
+                                        <div class="layui-form-mid layui-word-aux">暂时未实现</div>
+                                    </div>
+    
+                                    <div class="layui-form-item" style="padding:20px;">
+                                        <div class="layui-input-inline">
+                                            <button type="button" class="layui-btn layui-btn-danger" id="back">返回</button>
+                                            <button class="layui-btn" lay-submit lay-filter="save_config">立即提交</button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                            
+                            <script src="/static/layui/layui.js"></script>
+                            <script>
+                                layui.use(['form', 'jquery', 'layer'], function () {
+                                    var form = layui.form;
+                                    var jq = layui.jquery;
+                                    var layer = layui.layer;
+                                    jq('#back').on('click',function(){
+                                        top.location.href='{{.admin_uri}}';
+                                        return
+                                    });
+                                    //监听提交
+                                    form.on('submit(save_config)', function (data) {
+                                        jq.ajax({
+                                            url: '{{.admin_uri}}/save_config',
+                                            method: 'post',
+                                            data: data.field,
+                                            dataType: 'JSON',
+                                            success: function (res) {
+                                                if (res.code === 0) {
+                                                    if (res.action == "add") {
+                                                        layer.alert("添加成功")
+                                                        top.location.href = "{{.admin_uri}}";
+                                                    } else {
+                                                        layer.alert("保存成功")
+                                                    }
+                                                } else {
+                                                    layer.alert("保存失败")
+                                                }
+
+                                            },
+                                            error: function (data) {
+                                                layer.alert("保存失败")
+                                            }
+                                        });
+                                        return false;
+                                    });
+                                });
+                            </script>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

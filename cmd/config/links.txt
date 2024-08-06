@@ -1,0 +1,3 @@
+www.baidu.com||http://www.google.com,谷歌||http://www.sogou.com,搜狗||http://www.taobao.com,淘宝
+www.baidu1.com||http://www.google.com,谷歌||http://www.sogou.com,搜狗||http://www.taobao.com,淘宝
+www.baidu2.com||http://www.google.com,谷歌||http://www.sogou.com,搜狗||http://www.taobao.com,淘宝

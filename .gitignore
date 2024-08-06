@@ -1,0 +1,15 @@
+.vscode/
+.idea/
+jiami/
+cmd/config/data.db
+cmd/cache/
+cmd/config/auth.cert
+cmd/comfig/muban.xlxs
+cmd/config/passwd
+cmd/mirror
+cmd/pid
+cmd/mirror.log
+cmd/data.db
+cmd/mirror.exe
+cmd/cmd.zip
+cmd/logs

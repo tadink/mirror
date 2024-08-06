@@ -1,0 +1,5 @@
+1.将程序放到服务器上
+2.在程序目录下执行 ./mirror start  启动程序
+3.在宝塔上新建一个站
+4.将congfig/nginxconf.tpl 文件中的内容拷贝到步骤3创建的站点配置中去
+5.进入后台配置要镜像的站 后台地址 http://{IP}:8898/admin/reverseproxy  账号秘密在config/passwd 中

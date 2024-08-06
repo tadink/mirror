@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+    <title>镜像后台</title>
+    <meta name="renderer" content="webkit">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <link rel="stylesheet" href="/static/layui/css/layui.css" media="all">
+    <link id="layuicss-layer" rel="stylesheet" href="/static/layui/css/modules/layer/default/layer.css" media="all">
+    <link id="layuicss-layuiAdmin" rel="stylesheet" href="/static/css/admin.css" media="all">
+    <style>
+
+    </style>
+</head>
+
+<body>
+    <div>
+        <div class="layadmin-tabsbody-item layui-show">
+            <div class="layui-fluid">
+                <div class="layui-row layui-col-space15">
+                    <div class="layui-col-md12">
+                        <div class="layui-card">
+                            <div class="layui-tab">
+                                <ul class="layui-tab-title">
+                                    <li class="layui-this">JS代码</li>
+                                    <li>标题关键词</li>
+                                    <li>友情链接</li>
+                                    <li>开启广告域名</li>
+                                </ul>
+                                <div class="layui-tab-content">
+                                    <div class="layui-tab-item layui-show">
+                                        <div class="layui-form-item layui-form-text">
+                                            <label class="layui-form-label">JavaScript</label>
+                                            <div class="layui-input-block">
+                                                <textarea id="js_config_textarea" placeholder="请输入内容" rows="15"
+                                                    class="layui-textarea">{{.inject_js}}</textarea>
+                                            </div>
+                                        </div>
+                                        <div class="layui-form-item">
+                                            <div class="layui-input-block">
+                                                <button type="button" class="layui-btn" id="save_js">立即提交</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="layui-tab-item">
+                                        <div class="layui-form-item layui-form-text">
+                                            <label class="layui-form-label">关键词</label>
+                                            <div class="layui-input-block">
+                                                <textarea id="keyword_config_textarea" placeholder="请输入内容" rows="15"
+                                                    class="layui-textarea">{{.keywords}}</textarea>
+                                            </div>
+                                        </div>
+                                        <div class="layui-form-item">
+                                            <div class="layui-input-block">
+                                                <button type="button" class="layui-btn" id="save_keyword">立即提交</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="layui-tab-item">
+                                        <div class="layui-form-item layui-form-text">
+                                            <label class="layui-form-label">友情链接</label>
+                                            <div class="layui-input-block">
+                                                <textarea id="friendlinks_config_textarea" placeholder="请输入内容" rows="15"
+                                                    class="layui-textarea">{{.friend_links}}</textarea>
+                                            </div>
+                                        </div>
+                                        <div class="layui-form-item">
+                                            <div class="layui-input-block">
+                                                <button type="button" class="layui-btn" id="save_friendlink">立即提交</button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="layui-tab-item">
+                                        <div class="layui-form-item layui-form-text">
+                                            <label class="layui-form-label">开启广告域名</label>
+                                            <div class="layui-input-block">
+                                                <textarea id="ad_domains_config_textarea" placeholder="请输入内容" rows="15"
+                                                    class="layui-textarea">{{.adDomains}}</textarea>
+                                            </div>
+                                        </div>
+                                        <div class="layui-form-item">
+                                            <div class="layui-input-block">
+                                                <button type="button" class="layui-btn" id="save_ad_domains">立即提交</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <script src="/static/layui/layui.js"></script>
+        <script>
+            layui.use(['jquery', 'layer', 'element'], function () {
+                const $ = layui.jquery;
+                const element = layui.element;
+                const layer = layui.layer;
+
+                function request(content, action) {
+                    $.ajax({
+                        url: '{{.admin_uri}}/save_base_config',
+                        type: 'post',
+                        dataType: "JSON",
+                        data: JSON.stringify({ content: content, action: action }),
+                        success: function (res) {
+                            if (res.code === 0) {
+                                layer.msg("保存成功");
+                                location.reload();
+                            } else {
+                                layer.msg("保存失败：" + res.msg);
+                            }
+                        },
+                        error: function (data) {
+                            layer.msg("保存失败：" + data);
+                        }
+                    });
+                }
+
+                $("#save_keyword").on("click", function () {
+                    let keyword_config = document.querySelector("#keyword_config_textarea").value;
+                    request(keyword_config, "keyword_config");
+                })
+                $("#save_js").on("click", function () {
+                    let js_config = document.querySelector("#js_config_textarea").value;
+                    request(js_config, "js_config");
+
+                });
+                $("#save_friendlink").on("click", function () {
+                    let friendlink_config = document.querySelector("#friendlinks_config_textarea").value;
+                    request(friendlink_config, "friendlink_config");
+                });
+                $("#save_ad_domains").on("click", function () {
+                    let ad_domains_config = document.querySelector("#ad_domains_config_textarea").value;
+                    request(ad_domains_config, "ad_domains_config");
+                });
+
+
+            });
+        </script>
+    </div>
+</body>
+
+</html>

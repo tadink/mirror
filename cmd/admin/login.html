@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="utf-8">
+    <title>登录</title>
+    <style type="text/css">
+        * {
+            padding: 0;
+            margin: 0;
+        }
+
+        .login-page {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            flex-direction: row;
+            justify-content: center;
+        }
+
+        .form {
+            z-index: 1;
+            padding: 30px;
+            background: rgba(255, 255, 255, 0.5);
+            text-align: center;
+            border-radius: 10px;
+            box-shadow: 0 0 20px 0 rgba(0, 0, 0, 0.2), 0 5px 5px 0 rgba(0, 0, 0, 0.24);
+        }
+
+        .form input {
+            font-family: "Roboto", sans-serif;
+            outline: 0;
+            background: #f2f2f2;
+            width: 100%;
+            border: 0;
+            margin: 0 0 15px;
+            padding: 15px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+
+        .form button {
+            font-family: "Roboto", sans-serif;
+            outline: 0;
+            margin-top: 20px;
+            background: #4CAF50;
+            width: 90%;
+            border: 0;
+            padding: 10px;
+            color: #FFFFFF;
+            font-size: 16px;
+            border-radius: 10px;
+            -webkit-transition: all 0.3 ease;
+            transition: all 0.3 ease;
+            cursor: pointer;
+        }
+
+        .login-form {
+            margin-top: 20px;
+        }
+
+        .form button:hover,
+        .form button:active,
+        .form button:focus {
+            background: #43A047;
+        }
+
+        body {
+            background: url("/static/images/sea-164989_960_720.jpg") no-repeat;
+            background-size: cover;
+            font-family: "Roboto", sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="login-page">
+        <div class="form">
+            <div class="login-form">
+                <input id="user_name" type="text" placeholder="用户名" />
+                <input id="password" type="password" placeholder="密码" />
+                <button id="login">登录</button>
+            </div>
+        </div>
+    </div>
+
+</body>
+<script>
+    const loginBtn = document.querySelector("#login");
+    loginBtn.addEventListener("click", async () => {
+        const user_name = document.querySelector("#user_name").value;
+        const password = document.querySelector("#password").value;
+        if (!user_name) {
+            alert("用户名不能为空");
+            return;
+        }
+        if (!password) {
+            alert("密码不能为空");
+            return;
+        }
+        const response = await fetch('{{.admin_uri}}/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json;charset=utf-8'
+            },
+            body: JSON.stringify({ user_name: user_name, password: password })
+        });
+        const result = await response.json();
+        if(result.code!==0){
+            alert(result.msg);
+            return;
+        }
+    
+        location.reload();
+        
+    });
+
+</script>
+
+</html>

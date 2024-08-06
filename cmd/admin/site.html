@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+    <title>镜像后台</title>
+    <meta name="renderer" content="webkit">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <link rel="stylesheet" href="/static/layui/css/layui.css" media="all">
+    <link id="layuicss-layer" rel="stylesheet" href="/static/layui/css/modules/layer/default/layer.css" media="all">
+    <link id="layuicss-layuiAdmin" rel="stylesheet" href="/static/css/admin.css" media="all">
+    <style>
+        .laytable-cell-11-0-0 {
+            width: 48px;
+        }
+
+        .laytable-cell-11-0-1 {
+            width: 80px;
+        }
+
+        .laytable-cell-11-0-2 {
+            width: 120px;
+        }
+
+        .laytable-cell-11-0-3 {
+            width: 80px;
+        }
+
+        .laytable-cell-11-0-4 {
+            width: 80px;
+        }
+
+        .laytable-cell-11-0-5 {
+            width: 100px;
+        }
+    </style>
+</head>
+
+<body>
+    <div>
+        <div class="layadmin-tabsbody-item layui-show">
+            <div class="layui-fluid">
+                <div class="layui-row layui-col-space15">
+                    <div class="layui-col-md12">
+                        <div class="layui-card">
+
+                            <div class="layui-card-header" style="height: 50px;">
+                                <div class="search-box" style="line-height: 50px;">
+                                    <span>搜索域名：</span>
+                                    <div class="layui-inline">
+                                        <input class="layui-input" name="domain" id="domain-input" autocomplete="off">
+                                    </div>
+                                    <button class="layui-btn" data-type="reload">搜索</button>
+                                </div>
+                            </div>
+                            <div class="layui-card-body">
+                                <button id="import" style="display: none"></button>
+                                <table class="layui-hide" id="site-table" lay-filter="site-list-table"></table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <script src="/static/layui/layui.js"></script>
+        <script type="text/html" id="toolBar">
+        <button type="button" lay-event="edit" class="layui-btn layui-btn-xs">编辑</button>
+        <button type="button" lay-event="delete" class="layui-btn layui-btn-xs layui-btn-danger">删除</button>
+        <button type="button" lay-event="del_cache" class="layui-btn layui-btn-xs layui-btn-danger">删缓存</button>
+    </script>
+
+        <script type="text/html" id="topToolBar">
+        <div class="layui-btn-container">
+            <button class="layui-btn layui-btn-sm" lay-event="add_config">添加</button>
+            <button class="layui-btn layui-btn-sm" lay-event="import">导入(.xlsx)</button>
+            <button class="layui-btn layui-btn-sm" lay-event="multi_del">批量删除</button>
+        </div>
+    </script>
+        <script>
+            layui.use(['table', 'jquery', 'layer', 'upload'], function () {
+                const table = layui.table;
+                const jq = layui.jquery;
+                const layer = layui.layer;
+                const upload = layui.upload
+                table.render({
+                    elem: '#site-table'
+                    , url: '{{.admin_uri}}/list'
+                    , toolbar: "#topToolBar"
+                    , title: '网站列表'
+                    , totalRow: true
+                    , cellMinWidth: 80
+                    , cols: [[
+                        { field: 'domain', title: '域名', fixed: 'left', unresize: true }
+                        , { field: 'url', title: '镜像地址' }
+                        , { field: 'index_title', title: '首页标题', }
+                        , { field: 'index_keywords', title: '首页关键字', }
+                        , { field: 'index_description', title: '首页描述', }
+                        , { field: 'finds', title: '需要替换词' }
+                        , { field: 'replaces', title: '替换词' }
+                        , { title: "操作", align: 'center', toolbar: '#toolBar' }
+                    ]]
+                    , parseData: function (res) {
+                        if (res.data) {
+                            for (let i = 0; i < res.data.length; i++) {
+                                res.data[i].finds = res.data[i].finds.join(";")
+                                res.data[i].replaces = res.data[i].replaces.join(";")
+                            }
+                        }
+
+                        return res;
+                    }
+                    , page: true
+                    , limit: 50
+                    , id: 'site-table'
+                    , limits: [50, 100, 150, 200]
+                });
+                let active = {
+                    reload: function () {
+                        //执行重载
+                        table.reload('site-table', {
+                            page: {
+                                curr: 1 //重新从第 1 页开始
+                            }
+                            , where: {
+                                domain: jq('#domain-input').val()
+                            }
+                        });
+                    }
+                };
+                jq('.search-box .layui-btn').on('click', function () {
+                    let type = jq(this).data('type');
+                    active[type] ? active[type].call(this) : '';
+                });
+
+
+
+                table.on('toolbar(site-list-table)', function (obj) {
+                    if (obj.event == "add_config") {
+                        top.location.href = "{{.admin_uri}}/edit"
+                        return;
+                    }
+                   
+                    if (obj.event == "import") {
+                        jq("#import").click();
+                        return;
+                    }
+                    if (obj.event == "multi_del") {
+                        layer.prompt({
+                            title: "填写域名，一行一个",
+                            area: ['600px', '350px'],
+                            formType: 2,
+                            maxlength: 3000
+                        }, function (text, index) {
+                            jq.ajax({
+                                url: '{{.admin_uri}}/multi_del',
+                                method: 'post',
+                                data: { "domains": text },
+                                dataType: "JSON",
+                                success: function (res) {
+                                    if (res.code == 0) {
+                                        layer.msg("删除成功");
+                                        layer.close(index);
+                                        location.reload();
+                                    } else {
+                                        layer.msg("删除失败：" + res.msg);
+                                    }
+                                },
+                                error: function (data) {
+                                    layer.msg("删除失败：" + data);
+                                }
+                            });
+                        });
+
+                    }
+
+
+                });
+                const uploadInst = upload.render({
+                    elem: '#import' //绑定元素
+                    , accept: 'file' //普通文件
+                    , url: '{{.admin_uri}}/import' //上传接口
+                    , before: function (obj) {
+                        layer.load(0)
+                    }
+                    , done: function (res) {
+                        //上传完毕回调
+                        if (res.code == 0) {
+                            layer.alert("导入成功");
+                            setTimeout(function () {
+                                location.reload();
+                            }, 1000);
+                        } else {
+                            layer.alert(res.msg);
+                        }
+
+                    }
+                    , error: function () {
+                        //请求异常回调
+                        layer.closeAll();
+                    }
+                });
+
+                table.on('tool(site-list-table)', function (obj) {
+                    if (obj.event == 'edit') {
+                        top.location.href = "{{.admin_uri}}/edit?url=" + obj.data.domain;
+                        return;
+                    } 
+                     if (obj.event == "delete") {
+                        layer.confirm('确定删除' + obj.data.domain + '配置吗?', { icon: 3, title: '提示' }, function (index) {
+                            //do something
+                            jq.ajax({
+                                url: '{{.admin_uri}}/delete?id=' + obj.data.id + "&domain=" + obj.data.domain,
+                                method: 'get',
+                                dataType: 'JSON',
+                                success: function (res) {
+                                    if (res.code === 0) {
+                                        layer.alert("删除成功")
+                                        obj.del();
+                                    } else {
+                                        layer.alert("删除失败" + res.msg)
+                                    }
+
+                                },
+                                error: function (data) {
+                                    layer.alert("删除失败")
+                                }
+
+                            });
+                            layer.close(index);
+                        });
+                    } 
+                    
+                    if (obj.event == "del_cache") {
+                        layer.confirm("确定删除" + obj.data.domain + "缓存吗？", { icon: 3, title: "提示" }, function (index) {
+                            jq.ajax({
+                                url: '{{.admin_uri}}/delete_cache?domain=' + obj.data.domain,
+                                method: "get",
+                                dataType: 'JSON',
+                                success: function (res) {
+                                    if (res.code === 0) {
+                                        layer.alert("删除成功");
+                                    } else {
+                                        layer.alert("删除失败");
+                                    }
+                                },
+                                error: function (data) {
+                                    layer.alert("删除失败");
+                                }
+                            });
+                            layer.close(index);
+                        });
+                    }
+
+                });
+            });
+        </script>
+    </div>
+    </div>
+</body>
+
+</html>
