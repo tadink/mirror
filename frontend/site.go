@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type Site struct {
@@ -28,6 +29,19 @@ type CacheResponse struct {
 	Body       []byte
 	Header     http.Header
 }
+
+func (cr *CacheResponse) free() {
+	cr.Header = nil
+	if len(cr.Body) > 1<<20 {
+		cr.Body = nil
+	} else {
+		cr.Body = cr.Body[:0]
+	}
+}
+
+var cachePool = sync.Pool{New: func() any {
+	return new(CacheResponse)
+}}
 
 var needIdAttrTags = []string{"address", "th", "tfoot", "tbody", "pre", "legend", "form", "h5", "h6", "h4", "h3", "h2", "h1", "dd", "dl", "dt", "fieldset", "caption", "div", "ol", "ul", "li", "p", "table", "tr", "td", "article", "aside", "nav", "header", "main", "section", "footer", "hgroup"}
 
@@ -77,16 +91,15 @@ func (site *Site) handleHtmlContent(content []byte, requestHost string, requestP
 		return content
 	}
 	replacedH1 := false
-	//bodyChildren := make([]*html.Node, 0)
 	for c := document.FirstChild; c != nil; c = c.NextSibling {
 		site.handleHtmlNode(c, requestHost, requestPath, scheme, isIndexPage, &replacedH1)
-		if !replacedH1 && c.FirstChild != nil && c.FirstChild.NextSibling != nil && site.H1Replace != "" {
+		if !replacedH1 && c.FirstChild != nil && c.FirstChild.NextSibling != nil {
 			c.FirstChild.NextSibling.InsertBefore(&html.Node{
 				Type: html.ElementNode,
 				Data: "h1",
 				FirstChild: &html.Node{
 					Type: html.TextNode,
-					Data: site.H1Replace,
+					Data: "{{h1_replace:default<--null-->}}",
 				},
 			}, c.FirstChild.NextSibling.FirstChild)
 
@@ -117,7 +130,22 @@ func (site *Site) ParseTemplateTags(content []byte, requestHost, scheme string, 
 		contentStr = strings.Replace(contentStr, "{{index_keywords}}", site.IndexKeywords, 1)
 		contentStr = strings.Replace(contentStr, "{{index_description}}", site.IndexDescription, 1)
 	}
+	h1regexp, _ := regexp.Compile(`\{\{h1_replace:default<--(.*?)-->}}`)
+	h1Tag := h1regexp.FindStringSubmatch(contentStr)
+	if h1Tag[1] == "null" {
+		if site.H1Replace == "" {
+			contentStr = strings.Replace(contentStr, "<h1>"+h1Tag[0]+"</h1>", site.H1Replace, 1)
+		} else {
+			contentStr = strings.Replace(contentStr, h1Tag[0], site.H1Replace, 1)
+		}
 
+	} else {
+		if site.H1Replace == "" {
+			contentStr = strings.Replace(contentStr, h1Tag[0], h1Tag[1], 1)
+		} else {
+			contentStr = strings.Replace(contentStr, h1Tag[0], site.H1Replace, 1)
+		}
+	}
 	keywordRegexp, _ := regexp.Compile(`\{\{keyword:(\d+)}}`)
 	keywordTags := keywordRegexp.FindAllStringSubmatch(contentStr, -1)
 	for _, keywordTag := range keywordTags {
@@ -165,8 +193,8 @@ func (site *Site) handleHtmlNode(node *html.Node, requestHost string, requestPat
 		if node.Data == "head" {
 			site.transformHeadNode(node)
 		}
-		if node.Data == "h1" && node.FirstChild != nil && node.FirstChild.Type == html.TextNode && site.H1Replace != "" {
-			node.FirstChild.Data = site.H1Replace
+		if node.Data == "h1" && node.FirstChild != nil && node.FirstChild.Type == html.TextNode {
+			node.FirstChild.Data = fmt.Sprintf("{{h1_replace:default<--%s-->}}", node.FirstChild.Data)
 			*replacedH1 = true
 		}
 		site.transformNodeAttr(node)
@@ -184,7 +212,6 @@ func (site *Site) transformText(text string) string {
 		tag := fmt.Sprintf("{{replace:%d}}", index)
 		text = strings.ReplaceAll(text, find, tag)
 	}
-	//text = site.replaceHost(text, requestHost)
 	if site.S2t {
 		chineseRegexp, _ := regexp.Compile("^[\u4e00-\u9fa5]+")
 		text = chineseRegexp.ReplaceAllStringFunc(text, func(s string) string {

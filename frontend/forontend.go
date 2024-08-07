@@ -7,6 +7,7 @@ import (
 	"encoding/gob"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"github.com/liuzl/gocc"
 	"math/rand/v2"
 	"net"
@@ -118,13 +119,17 @@ func (f *Frontend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (f *Frontend) Route(writer http.ResponseWriter, request *http.Request) {
 	site := request.Context().Value(SITE).(*Site)
-	//ua := request.Context().Value(ORIGIN_UA).(string)
 	cacheKey := site.Domain + request.URL.Path + request.URL.RawQuery
 	if site.CacheEnable {
-		if cacheResponse := f.getCache(cacheKey, site.Domain, site.CacheTime, false); cacheResponse != nil {
-			f.handleCacheResponse(cacheResponse, site, writer, request)
+		cache := cachePool.Get().(*CacheResponse)
+		cache.free()
+		defer cachePool.Put(cache)
+		err := f.getCache(cacheKey, site.Domain, site.CacheTime, false, cache)
+		if err == nil {
+			f.handleCacheResponse(cache, site, writer, request)
 			return
 		}
+		logger.Error("getCache error", err.Error())
 	}
 	if config.Conf.UserAgent != "" {
 		request.Header.Set("User-Agent", config.Conf.UserAgent)
@@ -135,45 +140,18 @@ func (f *Frontend) Route(writer http.ResponseWriter, request *http.Request) {
 
 func (f *Frontend) ErrorHandler(writer http.ResponseWriter, request *http.Request, e error) {
 	logger.Error(request.URL.String(), e.Error())
-
-	requestHost := request.Context().Value(REQUEST_HOST).(string)
-	scheme := request.Context().Value(ORIGIN_SCHEME).(string)
 	site := request.Context().Value(SITE).(*Site)
 	cacheKey := site.Domain + request.URL.Path + request.URL.RawQuery
-	cacheResponse := f.getCache(cacheKey, site.Domain, site.CacheTime, true)
-	if cacheResponse == nil {
+	cache := cachePool.Get().(*CacheResponse)
+	cache.free()
+	defer cachePool.Put(cache)
+	err := f.getCache(cacheKey, site.Domain, site.CacheTime, true, cache)
+	if err != nil {
 		writer.WriteHeader(404)
 		_, _ = writer.Write([]byte("请求出错，请检查源站"))
 		return
 	}
-	var content = cacheResponse.Body
-	contentType := strings.ToLower(cacheResponse.Header.Get("Content-Type"))
-	if strings.Contains(contentType, "text/html") {
-		isIndexPage := helper.IsIndexPage(request.URL)
-		content = site.handleHtmlResponse(content, isIndexPage, requestHost, scheme)
-	} else if strings.Contains(contentType, "css") || strings.Contains(contentType, "javascript") {
-		content = helper.GBK2UTF8(content, contentType)
-		for index, find := range site.Finds {
-			content = bytes.ReplaceAll(content, []byte(find), []byte(site.Replaces[index]))
-		}
-		contentStr := site.replaceHost(string(content), requestHost, scheme)
-		content = []byte(contentStr)
-	}
-
-	for s, i := range cacheResponse.Header {
-		writer.Header()[s] = i
-	}
-	contentLength := int64(len(content))
-	writer.Header().Set("Content-Length", strconv.FormatInt(contentLength, 10))
-	if cacheResponse.StatusCode != 0 {
-		writer.WriteHeader(cacheResponse.StatusCode)
-	} else {
-		writer.WriteHeader(200)
-	}
-	_, err := writer.Write(content)
-	if err != nil {
-		logger.Error("写出错误：", err.Error(), request.URL)
-	}
+	f.handleCacheResponse(cache, site, writer, request)
 
 }
 
@@ -194,13 +172,8 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 		contentType := strings.ToLower(response.Header.Get("Content-Type"))
 
 		if strings.Contains(contentType, "text/html") {
-			content = bytes.ReplaceAll(content, []byte("\u200B"), []byte(""))
-			content = bytes.ReplaceAll(content, []byte("\uFEFF"), []byte(""))
-			content = bytes.ReplaceAll(content, []byte("\u200D"), []byte(""))
-			content = bytes.ReplaceAll(content, []byte("\u200C"), []byte(""))
 			content = helper.GBK2UTF8(content, contentType)
 			randomHtml := helper.RandHtml(site.Domain, scheme)
-
 			requestPath := response.Request.URL.Path
 			isIndex := helper.IsIndexPage(response.Request.URL)
 			content = site.PreHandleHTML(content, isIndex, requestHost, requestPath, scheme, randomHtml)
@@ -230,7 +203,6 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 	if response.StatusCode > 400 && response.StatusCode < 500 {
 		content := []byte("访问的页面不存在")
 		response.Header.Set("Content-Type", "text/plain")
-		_ = f.setCache(cacheKey, site.Domain, response.StatusCode, response.Header, content)
 		helper.WrapResponseBody(response, content)
 	}
 	return nil
@@ -338,32 +310,31 @@ func (f *Frontend) querySite(host string) (*Site, error) {
 	return f.querySite(strings.Join(hostParts[1:], "."))
 }
 
-func (f *Frontend) getCache(requestUrl string, domain string, cacheTime int64, force bool) *CacheResponse {
+func (f *Frontend) getCache(requestUrl string, domain string, cacheTime int64, force bool, cache *CacheResponse) error {
 	sum := sha1.Sum([]byte(requestUrl))
 	hash := hex.EncodeToString(sum[:])
 	dir := path.Join(config.Conf.CachePath, domain, hash[:2])
 	filename := path.Join(dir, hash)
 	fileInfo, err := os.Stat(filename)
 	if err != nil {
-		return nil
+		return err
 	}
 	if modTime := fileInfo.ModTime(); !force && time.Now().Unix() > modTime.Unix()+cacheTime*60 {
-		return nil
+		return fmt.Errorf("%s缓存已经过期 %s", domain, requestUrl)
 	}
+	file, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	err = gob.NewDecoder(file).Decode(cache)
+	if err != nil {
 
-	if file, err := os.Open(filename); err == nil {
-		resp := new(CacheResponse)
-		err = gob.NewDecoder(file).Decode(resp)
-		if err != nil {
-			logger.Error(err.Error())
-			return nil
-		}
-		err = file.Close()
-		if err != nil {
-			logger.Error(err.Error())
-			return nil
-		}
-		return resp
+		return err
+	}
+	err = file.Close()
+	if err != nil {
+
+		return err
 	}
 	return nil
 }
@@ -376,11 +347,10 @@ func (f *Frontend) setCache(url string, domain string, statusCode int, header ht
 	}
 	header.Del("Content-Encoding")
 	header.Del("Content-Security-Policy")
-	resp := &CacheResponse{
-		Body:       content,
-		StatusCode: statusCode,
-		Header:     header,
-	}
+	resp := cachePool.Get().(*CacheResponse)
+	resp.Header = header
+	resp.Body = content
+	resp.StatusCode = statusCode
 	sum := sha1.Sum([]byte(url))
 	hash := hex.EncodeToString(sum[:])
 	dir := path.Join(config.Conf.CachePath, domain, hash[:2])
