@@ -87,6 +87,9 @@ func (site *Site) addRandomHTML(node *html.Node) {
 func (site *Site) preDealNode(node *html.Node) {
 	site.addNodeIdAttr(node)
 	site.addRandomHTML(node)
+	if node.Data == "h1" && node.FirstChild != nil && node.FirstChild.Type == html.TextNode {
+		node.FirstChild.Data = fmt.Sprintf("{{h1_replace:default{--%s--}}}", node.FirstChild.Data)
+	}
 	for c := node.FirstChild; c != nil; c = c.NextSibling {
 		site.preDealNode(c)
 	}
@@ -95,7 +98,6 @@ func (site *Site) PreHandleHTML(document *html.Node, randomHtml string) ([]byte,
 	for c := document.FirstChild; c != nil; c = c.NextSibling {
 		site.preDealNode(c)
 	}
-
 	var buff bytes.Buffer
 	err := html.Render(&buff, document)
 	if err != nil {
@@ -105,8 +107,8 @@ func (site *Site) PreHandleHTML(document *html.Node, randomHtml string) ([]byte,
 	return content, nil
 }
 
-func (site *Site) handleHtmlResponse(document *html.Node, scheme, requestHost, requestPath string, randomHtml string, isIndexPage bool) ([]byte, error) {
-	site.handleHtmlContent(document, requestHost, scheme, requestPath, isIndexPage)
+func (site *Site) handleHtmlResponse(document *html.Node, scheme, requestHost, requestPath string, randomHtml string, isIndexPage, replacedH1 bool) ([]byte, error) {
+	site.handleHtmlContent(document, scheme, requestHost, requestPath, isIndexPage, replacedH1)
 	var buff bytes.Buffer
 	err := html.Render(&buff, document)
 	if err != nil {
@@ -117,24 +119,12 @@ func (site *Site) handleHtmlResponse(document *html.Node, scheme, requestHost, r
 
 }
 
-func (site *Site) handleHtmlContent(document *html.Node, scheme, requestHost, requestPath string, isIndexPage bool) {
-	replacedH1 := false
+func (site *Site) handleHtmlContent(document *html.Node, scheme, requestHost, requestPath string, isIndexPage, replacedH1 bool) {
 	for c := document.FirstChild; c != nil; c = c.NextSibling {
-		site.handleHtmlNode(c, requestHost, requestPath, scheme, isIndexPage, &replacedH1)
-		if !replacedH1 && c.FirstChild != nil && c.FirstChild.NextSibling != nil {
-			c.FirstChild.NextSibling.InsertBefore(&html.Node{
-				Type: html.ElementNode,
-				Data: "h1",
-				FirstChild: &html.Node{
-					Type: html.TextNode,
-					Data: "{{h1_replace:default<--null-->}}",
-				},
-			}, c.FirstChild.NextSibling.FirstChild)
-
-		}
+		site.handleHtmlNode(c, scheme, requestHost, requestPath, isIndexPage, replacedH1)
 	}
 }
-func (site *Site) handleHtmlNode(node *html.Node, requestHost string, requestPath, scheme string, isIndexPage bool, replacedH1 *bool) {
+func (site *Site) handleHtmlNode(node *html.Node, scheme, requestHost, requestPath string, isIndexPage bool, replacedH1 bool) {
 	switch node.Type {
 	case html.TextNode, html.CommentNode, html.RawNode:
 		node.Data = site.transformText(node.Data)
@@ -155,14 +145,10 @@ func (site *Site) handleHtmlNode(node *html.Node, requestHost string, requestPat
 			site.transformMetaNode(node, isIndexPage)
 		}
 		if node.Data == "body" {
-			site.transformBodyNode(node, isIndexPage)
+			site.transformBodyNode(node, isIndexPage, replacedH1)
 		}
 		if node.Data == "head" {
 			site.transformHeadNode(node)
-		}
-		if node.Data == "h1" && node.FirstChild != nil && node.FirstChild.Type == html.TextNode {
-			node.FirstChild.Data = fmt.Sprintf("{{h1_replace:default<--%s-->}}", node.FirstChild.Data)
-			*replacedH1 = true
 		}
 		site.transformNodeAttr(node)
 
@@ -170,8 +156,9 @@ func (site *Site) handleHtmlNode(node *html.Node, requestHost string, requestPat
 
 	}
 	for c := node.FirstChild; c != nil; c = c.NextSibling {
-		site.handleHtmlNode(c, requestHost, requestPath, scheme, isIndexPage, replacedH1)
+		site.handleHtmlNode(c, scheme, requestHost, requestPath, isIndexPage, replacedH1)
 	}
+
 }
 
 func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomHtml string, isIndexPage bool) []byte {
@@ -191,20 +178,21 @@ func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomH
 		contentStr = strings.Replace(contentStr, "{{index_description}}", site.IndexDescription, 1)
 	}
 	contentStr = strings.Replace(contentStr, "{{random_html}}", randomHtml, 1)
-	h1regexp, _ := regexp.Compile(`\{\{h1_replace:default<--(.*?)-->}}`)
+	h1regexp, _ := regexp.Compile(`\{\{h1_replace:default\{--(.*?)--}}}`)
 	h1Tag := h1regexp.FindStringSubmatch(contentStr)
-	if h1Tag[1] == "null" {
-		if site.H1Replace == "" {
-			contentStr = strings.Replace(contentStr, "<h1>"+h1Tag[0]+"</h1>", site.H1Replace, 1)
+	if h1Tag != nil {
+		if h1Tag[1] == "null" {
+			if site.H1Replace == "" {
+				contentStr = strings.Replace(contentStr, "<h1>"+h1Tag[0]+"</h1>", site.H1Replace, 1)
+			} else {
+				contentStr = strings.Replace(contentStr, h1Tag[0], site.H1Replace, 1)
+			}
 		} else {
-			contentStr = strings.Replace(contentStr, h1Tag[0], site.H1Replace, 1)
-		}
-
-	} else {
-		if site.H1Replace == "" {
-			contentStr = strings.Replace(contentStr, h1Tag[0], h1Tag[1], 1)
-		} else {
-			contentStr = strings.Replace(contentStr, h1Tag[0], site.H1Replace, 1)
+			if site.H1Replace == "" {
+				contentStr = strings.Replace(contentStr, h1Tag[0], h1Tag[1], 1)
+			} else {
+				contentStr = strings.Replace(contentStr, h1Tag[0], site.H1Replace, 1)
+			}
 		}
 	}
 
@@ -269,7 +257,18 @@ func (site *Site) transformNodeAttr(node *html.Node) {
 	}
 
 }
-func (site *Site) transformBodyNode(node *html.Node, isIndexPage bool) {
+func (site *Site) transformBodyNode(node *html.Node, isIndexPage, replacedH1 bool) {
+	if !replacedH1 {
+		node.InsertBefore(&html.Node{
+			Type: html.ElementNode,
+			Data: "h1",
+			FirstChild: &html.Node{
+				Type: html.TextNode,
+				Data: "{{h1_replace:default{--null--}}}",
+			},
+		}, node.FirstChild)
+	}
+
 	if !isIndexPage {
 		return
 	}

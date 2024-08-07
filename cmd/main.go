@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -72,40 +74,31 @@ func main() {
 
 func startCmd() {
 
-	logger.InitLogger()
+	logger.Init()
 	err := config.Init()
 	if err != nil {
-		logger.Error("parse config error", err.Error())
+		slog.Error("parse config error:" + err.Error())
 		return
 	}
 	//繁体
 	err = frontend.InitS2T()
 	if err != nil {
-		logger.Error("转繁体功能错误", err.Error())
+		slog.Error("转繁体功能错误:" + err.Error())
 		return
 	}
 	err = db.InitDB()
 	if err != nil {
-		logger.Error("数据库连接错误", err.Error())
+		slog.Error("数据库错误:" + err.Error())
 		return
 	}
-
-	err = db.InitTable()
-	if err != nil {
-		logger.Error("init table error", err.Error())
-		return
-	}
-
 	application := &app.Application{}
 
 	application.Start()
-	// 捕获kill的信号
-	sigTERM := make(chan os.Signal, 1)
-	signal.Notify(sigTERM, syscall.SIGTERM, syscall.Signal(16))
-	// 收到信号前会一直阻塞
 
-	<-sigTERM
+	ctx, cancelFunc := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.Signal(16))
+	defer cancelFunc()
+	<-ctx.Done()
 	application.Stop()
-	logger.Info("exit")
+	slog.Info("exit")
 
 }

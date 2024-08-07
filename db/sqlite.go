@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/glebarez/go-sqlite"
 )
 
 type SiteConfig struct {
@@ -32,7 +32,11 @@ var DB *sql.DB
 
 func InitDB() error {
 	var err error
-	DB, err = sql.Open("sqlite3", "config/data.db")
+	DB, err = sql.Open("sqlite", "config/data.db")
+	if err != nil {
+		return err
+	}
+	err = createSiteTable()
 	if err != nil {
 		return err
 	}
@@ -253,31 +257,9 @@ func ForbiddenWordReplace(forbiddenWord, replaceWord, splitWord string) ([]strin
 	return domainArr, err
 }
 
-func InitTable() error {
-	err := createSiteTable()
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 func createSiteTable() error {
-	rs, err := DB.Query(`SELECT count(*) as count FROM sqlite_master WHERE type='table' AND name = 'website_config'`)
-	if err != nil {
-		return err
-	}
-	var count int
-	rs.Next()
-	err = rs.Scan(&count)
-	if err != nil {
-		return err
-	}
-	err = rs.Close()
-	if err != nil {
-		return err
-	}
-	if count == 0 {
-		_, err = DB.Exec(`create table if not exists website_config  (
+
+	_, err := DB.Exec(`create table if not exists website_config  (
 		id integer primary key AUTOINCREMENT,
 		domain varchar(30) not null unique ,
 		url varchar(50),
@@ -295,7 +277,5 @@ func createSiteTable() error {
 		baidu_push_key varchar(255),
 		sm_push_key varchar(255)	
 )`)
-
-	}
 	return err
 }

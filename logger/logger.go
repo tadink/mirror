@@ -1,29 +1,16 @@
 package logger
 
-import (
-	"github.com/gookit/slog"
-	"github.com/gookit/slog/handler"
-	"github.com/gookit/slog/rotatefile"
-)
+import "log/slog"
+import "gopkg.in/natefinch/lumberjack.v2"
 
-var Logger *slog.Logger
-
-func InitLogger() {
-	handle := handler.MustRotateFile("logs/mirror.log", rotatefile.EveryDay, func(c *handler.Config) {
-		c.BackupNum = 2
-		c.Levels = slog.AllLevels
-		c.UseJSON = true
-	})
-	Logger = slog.NewWithHandlers(handle)
-}
-
-func Error(args ...any) {
-	Logger.Error(args)
-}
-
-func Fatal(args ...any) {
-	Logger.Fatal(args)
-}
-func Info(args ...any) {
-	Logger.Info(args)
+func Init() {
+	w := &lumberjack.Logger{
+		Filename:   "./logs/mirror.log",
+		MaxSize:    500, // megabytes
+		MaxBackups: 3,
+		MaxAge:     28,   //days
+		Compress:   true, // disabled by default
+	}
+	logger := slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	slog.SetDefault(logger)
 }

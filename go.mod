@@ -3,12 +3,11 @@ module seo/mirror
 go 1.22
 
 require (
-	github.com/gookit/slog v0.5.6
+	github.com/glebarez/go-sqlite v1.22.0
 	github.com/liuzl/gocc v0.0.0-20231231122217-0372e1059ca5
-	github.com/mattn/go-sqlite3 v1.14.22
-	github.com/wenzhenxi/gorsa v0.0.0-20230530123828-0320cce15d81
 	github.com/xuri/excelize/v2 v2.8.1
 	golang.org/x/net v0.27.0
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
 require (
@@ -23,13 +22,15 @@ require (
 )
 
 require (
-	github.com/gookit/color v1.5.4 // indirect
-	github.com/gookit/goutil v0.6.16 // indirect
-	github.com/gookit/gsr v0.1.0 // indirect
+	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/google/uuid v1.5.0 // indirect
+	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
-	github.com/valyala/bytebufferpool v1.0.0 // indirect
-	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	golang.org/x/sync v0.7.0 // indirect
+	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	golang.org/x/sys v0.22.0 // indirect
 	golang.org/x/text v0.16.0 // indirect
+	modernc.org/libc v1.37.6 // indirect
+	modernc.org/mathutil v1.6.0 // indirect
+	modernc.org/memory v1.7.2 // indirect
+	modernc.org/sqlite v1.28.0 // indirect
 )

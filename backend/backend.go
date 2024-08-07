@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -13,7 +14,6 @@ import (
 	"seo/mirror/db"
 	"seo/mirror/frontend"
 	"seo/mirror/helper"
-	"seo/mirror/logger"
 	"strconv"
 	"strings"
 
@@ -96,14 +96,14 @@ func (b *Backend) login(writer http.ResponseWriter, request *http.Request) {
 		t := template.Must(template.New("login.html").ParseFiles("admin/login.html"))
 		err := t.Execute(writer, map[string]string{"admin_uri": b.prefix})
 		if err != nil {
-			logger.Error("login template error", err.Error())
+			slog.Error("login template error:" + err.Error())
 		}
 		return
 	}
 	var user User
 	err := json.NewDecoder(request.Body).Decode(&user)
 	if err != nil {
-		logger.Error("login ParseForm error", err.Error())
+		slog.Error("login ParseForm error:" + err.Error())
 		_, err = writer.Write([]byte(`{"code":5,"msg":"参数错误"}`))
 		return
 	}
@@ -121,7 +121,7 @@ func (b *Backend) login(writer http.ResponseWriter, request *http.Request) {
 func (b *Backend) multiDel(writer http.ResponseWriter, request *http.Request) {
 	err := request.ParseForm()
 	if err != nil {
-		logger.Error("MulDel ParseForm error", err.Error())
+		slog.Error("MulDel ParseForm error:" + err.Error())
 		_, _ = writer.Write([]byte(`{"code":5,"msg":"请求数据出错"}`))
 	}
 	domains := request.Form.Get("domains")
@@ -133,7 +133,7 @@ func (b *Backend) multiDel(writer http.ResponseWriter, request *http.Request) {
 	domainArr := strings.Split(domains, "\n")
 	err = db.MultiDel(domainArr)
 	if err != nil {
-		logger.Error("MulDel Dao error", err.Error())
+		slog.Error("MulDel Dao error:" + err.Error())
 		_, _ = writer.Write([]byte(`{"code":4,"msg":"` + err.Error() + `"}`))
 		return
 	}
@@ -148,34 +148,34 @@ func (b *Backend) multiDel(writer http.ResponseWriter, request *http.Request) {
 func (b *Backend) index(w http.ResponseWriter, request *http.Request) {
 	t, err := template.ParseFiles("admin/index.html")
 	if err != nil {
-		logger.Error("index template error", err.Error())
+		slog.Error("index template error:" + err.Error())
 		return
 	}
 	err = t.Execute(w, map[string]string{"admin_uri": b.prefix, "ExpireDate": config.Conf.AuthInfo.Date})
 	if err != nil {
-		logger.Error("index template error", err.Error())
+		slog.Error("index template error:" + err.Error())
 	}
 }
 func (b *Backend) site(w http.ResponseWriter, request *http.Request) {
 	t, err := template.ParseFiles("admin/site.html")
 	if err != nil {
-		logger.Error("index template error", err.Error())
+		slog.Error("index template error:" + err.Error())
 		return
 	}
 	err = t.Execute(w, map[string]string{"admin_uri": b.prefix, "ExpireDate": config.Conf.AuthInfo.Date})
 	if err != nil {
-		logger.Error("index template error", err.Error())
+		slog.Error("index template error:" + err.Error())
 	}
 }
 func (b *Backend) record(w http.ResponseWriter, request *http.Request) {
 	t, err := template.ParseFiles("admin/record.html")
 	if err != nil {
-		logger.Error("index template error", err.Error())
+		slog.Error("index template error:" + err.Error())
 		return
 	}
 	err = t.Execute(w, map[string]string{"admin_uri": b.prefix})
 	if err != nil {
-		logger.Error("index template error", err.Error())
+		slog.Error("index template error:" + err.Error())
 	}
 }
 
@@ -185,13 +185,13 @@ func (b *Backend) forbiddenWords(writer http.ResponseWriter, request *http.Reque
 		t = template.Must(t.ParseFiles("admin/forbidden_words.html"))
 		err := t.Execute(writer, map[string]interface{}{"admin_uri": b.prefix})
 		if err != nil {
-			logger.Error("forbiddenWords template error", err.Error())
+			slog.Error("forbiddenWords template error:" + err.Error())
 		}
 		return
 	}
 	err := request.ParseForm()
 	if err != nil {
-		logger.Error("forbiddenWords parse form error", err.Error())
+		slog.Error("forbiddenWords parse form error:" + err.Error())
 		_, _ = writer.Write([]byte(`{"code":5,"msg":"请求参数错误"}`))
 	}
 	forbiddenWord := request.Form.Get("forbidden_word")
@@ -203,7 +203,7 @@ func (b *Backend) forbiddenWords(writer http.ResponseWriter, request *http.Reque
 	}
 	domainArr, err := db.ForbiddenWordReplace(forbiddenWord, replaceWord, splitWord)
 	if err != nil {
-		logger.Error("forbiddenWords ForbiddenWordReplace error", err.Error())
+		slog.Error("forbiddenWords ForbiddenWordReplace error" + err.Error())
 		_, _ = writer.Write([]byte(`{"code":3,"msg":"` + err.Error() + `"}`))
 		return
 	}
@@ -237,7 +237,7 @@ func (b *Backend) editSite(writer http.ResponseWriter, request *http.Request) {
 	}
 	err = t.Execute(writer, map[string]interface{}{"proxy_config": siteConfig, "admin_uri": b.prefix})
 	if err != nil {
-		logger.Error("editSite template error", err.Error())
+		slog.Error("editSite template error:" + err.Error())
 	}
 
 }
@@ -470,7 +470,7 @@ func (b *Backend) siteImport(writer http.ResponseWriter, request *http.Request) 
 		if err != nil {
 			msg := fmt.Sprintf(`{"code":6,"msg":"%s"}`, err.Error())
 			_, _ = writer.Write([]byte(msg))
-			logger.Error(err.Error())
+			slog.Error(err.Error())
 			return
 		}
 		b.frontend.Sites.Store(site.Domain, site)
@@ -499,7 +499,7 @@ func (b *Backend) baseConfig(writer http.ResponseWriter, request *http.Request) 
 		"adDomains":    strings.Join(domains, "\n"),
 	})
 	if err != nil {
-		logger.Error("config template error", err.Error())
+		slog.Error("config template error:" + err.Error())
 	}
 }
 func (b *Backend) saveBaseConfig(writer http.ResponseWriter, request *http.Request) {
