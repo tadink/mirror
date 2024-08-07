@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/liuzl/gocc"
+	"golang.org/x/net/html"
 	"math/rand/v2"
 	"net"
 	"net/http"
@@ -33,7 +34,7 @@ const (
 	REQUEST_HOST
 	ORIGIN_SCHEME
 	SITE
-	TARGET
+	TARGET_URL
 )
 
 type Frontend struct {
@@ -93,7 +94,7 @@ func (f *Frontend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == helper.GetInjectJsPath(host) {
 		w.Header().Set("Content-Type", "text/javascript;charset=utf-8")
-		_, err := w.Write([]byte(config.Conf.InjectJs))
+		_, err = w.Write([]byte(config.Conf.InjectJs))
 		if err != nil {
 			logger.Error(err.Error())
 		}
@@ -106,13 +107,12 @@ func (f *Frontend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("页面未找到"))
 		return
 	}
-	requestHost := helper.GetHost(r)
 	scheme := r.Header.Get("scheme")
 	ctx := context.WithValue(r.Context(), SITE, site)
 	ctx = context.WithValue(ctx, ORIGIN_UA, ua)
 	ctx = context.WithValue(ctx, ORIGIN_SCHEME, scheme)
-	ctx = context.WithValue(ctx, REQUEST_HOST, requestHost)
-	ctx = context.WithValue(ctx, TARGET, site.targetUrl)
+	ctx = context.WithValue(ctx, REQUEST_HOST, host)
+	ctx = context.WithValue(ctx, TARGET_URL, site.targetUrl)
 	r = r.WithContext(ctx)
 	f.Route(w, r)
 }
@@ -122,8 +122,8 @@ func (f *Frontend) Route(writer http.ResponseWriter, request *http.Request) {
 	cacheKey := site.Domain + request.URL.Path + request.URL.RawQuery
 	if site.CacheEnable {
 		cache := cachePool.Get().(*CacheResponse)
-		cache.free()
 		defer cachePool.Put(cache)
+		cache.free()
 		err := f.getCache(cacheKey, site.Domain, site.CacheTime, false, cache)
 		if err == nil {
 			f.handleCacheResponse(cache, site, writer, request)
@@ -143,8 +143,8 @@ func (f *Frontend) ErrorHandler(writer http.ResponseWriter, request *http.Reques
 	site := request.Context().Value(SITE).(*Site)
 	cacheKey := site.Domain + request.URL.Path + request.URL.RawQuery
 	cache := cachePool.Get().(*CacheResponse)
-	cache.free()
 	defer cachePool.Put(cache)
+	cache.free()
 	err := f.getCache(cacheKey, site.Domain, site.CacheTime, true, cache)
 	if err != nil {
 		writer.WriteHeader(404)
@@ -152,7 +152,6 @@ func (f *Frontend) ErrorHandler(writer http.ResponseWriter, request *http.Reques
 		return
 	}
 	f.handleCacheResponse(cache, site, writer, request)
-
 }
 
 func (f *Frontend) ModifyResponse(response *http.Response) error {
@@ -160,7 +159,7 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 	scheme := response.Request.Context().Value(ORIGIN_SCHEME).(string)
 	site := response.Request.Context().Value(SITE).(*Site)
 	if response.StatusCode == 301 || response.StatusCode == 302 {
-		return site.handleRedirectResponse(response, requestHost)
+		return f.handleRedirectResponse(response, requestHost)
 	}
 
 	cacheKey := site.Domain + response.Request.URL.Path + response.Request.URL.RawQuery
@@ -170,35 +169,37 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 			return err
 		}
 		contentType := strings.ToLower(response.Header.Get("Content-Type"))
-
 		if strings.Contains(contentType, "text/html") {
 			content = helper.GBK2UTF8(content, contentType)
+			doc, err := html.Parse(bytes.NewReader(content))
+			if err != nil {
+				return err
+			}
 			randomHtml := helper.RandHtml(site.Domain, scheme)
+			content, err = site.PreHandleHTML(doc, randomHtml)
+			if err != nil {
+				return err
+			}
+			_ = f.setCache(cacheKey, site.Domain, response.StatusCode, response.Header, content)
 			requestPath := response.Request.URL.Path
 			isIndex := helper.IsIndexPage(response.Request.URL)
-			content = site.PreHandleHTML(content, isIndex, requestHost, requestPath, scheme, randomHtml)
-			_ = f.setCache(cacheKey, site.Domain, response.StatusCode, response.Header, content)
-			content = site.handleHtmlResponse(content, isIndex, requestHost, scheme)
+			content, err = site.handleHtmlResponse(doc, scheme, requestHost, requestPath, randomHtml, isIndex)
 			helper.WrapResponseBody(response, content)
 			return nil
 		} else if strings.Contains(contentType, "css") || strings.Contains(contentType, "javascript") {
-			_ = f.setCache(cacheKey, site.Domain, response.StatusCode, response.Header, content)
 			content = helper.GBK2UTF8(content, contentType)
+			_ = f.setCache(cacheKey, site.Domain, response.StatusCode, response.Header, content)
 			for index, find := range site.Finds {
 				content = bytes.ReplaceAll(content, []byte(find), []byte(site.Replaces[index]))
 			}
 			contentStr := site.replaceHost(string(content), requestHost, scheme)
-
 			content = []byte(contentStr)
 			helper.WrapResponseBody(response, content)
 			return nil
-
 		}
-
 		_ = f.setCache(cacheKey, site.Domain, response.StatusCode, response.Header, content)
 		helper.WrapResponseBody(response, content)
 		return nil
-
 	}
 	if response.StatusCode > 400 && response.StatusCode < 500 {
 		content := []byte("访问的页面不存在")
@@ -208,7 +209,7 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 	return nil
 }
 
-func (site *Site) handleRedirectResponse(response *http.Response, host string) error {
+func (f *Frontend) handleRedirectResponse(response *http.Response, host string) error {
 	redirectUrl, err := response.Request.URL.Parse(response.Header.Get("Location"))
 	scheme := response.Request.Context().Value(ORIGIN_SCHEME).(string)
 	if err != nil {
@@ -239,13 +240,15 @@ func (f *Frontend) Auth() error {
 func (f *Frontend) handleCacheResponse(cacheResponse *CacheResponse, site *Site, writer http.ResponseWriter, request *http.Request) {
 	contentType := strings.ToLower(cacheResponse.Header.Get("Content-Type"))
 	requestHost := helper.GetHost(request)
+	requestPath := request.URL.Path
 	scheme := request.Context().Value(ORIGIN_SCHEME).(string)
 	var content = cacheResponse.Body
 	if strings.Contains(contentType, "text/html") {
 		isIndexPage := helper.IsIndexPage(request.URL)
-		content = site.handleHtmlResponse(content, isIndexPage, requestHost, scheme)
+		doc, _ := html.Parse(bytes.NewReader(content))
+		content, _ = site.handleHtmlResponse(doc, scheme, requestHost, requestPath, "", isIndexPage)
+
 	} else if strings.Contains(contentType, "css") || strings.Contains(contentType, "javascript") {
-		content = helper.GBK2UTF8(content, contentType)
 		for index, find := range site.Finds {
 			content = bytes.ReplaceAll(content, []byte(find), []byte(site.Replaces[index]))
 		}
@@ -267,7 +270,6 @@ func (f *Frontend) handleCacheResponse(cacheResponse *CacheResponse, site *Site,
 	if err != nil {
 		logger.Error("写出错误：", err.Error(), requestHost, request.URL)
 	}
-
 }
 
 func (f *Frontend) initProxy() {
@@ -288,7 +290,7 @@ func (f *Frontend) initProxy() {
 		},
 	}
 	rewrite := func(request *httputil.ProxyRequest) {
-		target := request.In.Context().Value(TARGET).(*url.URL)
+		target := request.In.Context().Value(TARGET_URL).(*url.URL)
 		request.Out.Header.Set("Referer", target.Scheme+"://"+target.Host)
 		request.Out.Header.Del("If-Modified-Since")
 		request.Out.Header.Del("If-None-Match")
