@@ -36,6 +36,7 @@ const (
 	OriginScheme
 	SITE
 	TargetUrl
+	BUFFER
 )
 
 type Frontend struct {
@@ -80,6 +81,7 @@ func NewFrontend() (*Frontend, error) {
 }
 
 func (f *Frontend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+
 	if authErr := f.Auth(); authErr != nil {
 		_, _ = w.Write([]byte(authErr.Error()))
 		return
@@ -109,13 +111,20 @@ func (f *Frontend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	scheme := r.Header.Get("scheme")
+	buffer := bufferPool.Get().(*bytes.Buffer)
+	buffer.Reset()
 	ctx := context.WithValue(r.Context(), SITE, site)
 	ctx = context.WithValue(ctx, OriginUA, ua)
 	ctx = context.WithValue(ctx, OriginScheme, scheme)
 	ctx = context.WithValue(ctx, RequestHost, host)
 	ctx = context.WithValue(ctx, TargetUrl, site.targetUrl)
+	ctx = context.WithValue(ctx, BUFFER, buffer)
 	r = r.WithContext(ctx)
 	f.Route(w, r)
+	if cap(buffer.Bytes()) < 1<<20 {
+		bufferPool.Put(buffer)
+	}
+
 }
 
 func (f *Frontend) Route(writer http.ResponseWriter, request *http.Request) {
@@ -135,11 +144,10 @@ func (f *Frontend) Route(writer http.ResponseWriter, request *http.Request) {
 		request.Header.Set("User-Agent", config.Conf.UserAgent)
 	}
 	f.proxy.ServeHTTP(writer, request)
-
 }
 
 func (f *Frontend) ErrorHandler(writer http.ResponseWriter, request *http.Request, e error) {
-	slog.Error("ErrorHandler", request.URL.String(), e.Error())
+	slog.Error("error handler", request.URL.String(), e.Error())
 	site := request.Context().Value(SITE).(*Site)
 	cacheKey := site.Domain + request.URL.Path + request.URL.RawQuery
 	cache := cachePool.Get().(*CacheResponse)
@@ -164,20 +172,23 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 
 	cacheKey := site.Domain + response.Request.URL.Path + response.Request.URL.RawQuery
 	if response.StatusCode == 200 {
-		content, err := helper.ReadResponse(response)
+		buffer := response.Request.Context().Value(BUFFER).(*bytes.Buffer)
+		err := helper.ReadResponse(response, buffer)
 		if err != nil {
 			return err
 		}
+		content := buffer.Bytes()
 		contentType := strings.ToLower(response.Header.Get("Content-Type"))
 		if strings.Contains(contentType, "text/html") {
 			content = bytes.ReplaceAll(content, []byte("\n"), []byte(""))
 			content = helper.GBK2UTF8(content, contentType)
-			doc, err := html.Parse(bytes.NewReader(content))
+			doc, err := html.Parse(buffer)
 			if err != nil {
 				return err
 			}
 			randomHtml := helper.RandHtml(site.Domain, scheme)
-			content, err = site.PreHandleHTML(doc, randomHtml)
+			buffer.Reset()
+			content, err = site.PreHandleHTML(doc, randomHtml, buffer)
 			if err != nil {
 				return err
 			}
@@ -186,7 +197,8 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 			isIndex := helper.IsIndexPage(response.Request.URL)
 			h1regexp, _ := regexp.Compile(`\{\{h1_replace:default\{--(.*?)--}}}`)
 			h1replaced := h1regexp.Match(content)
-			content, err = site.handleHtmlResponse(doc, scheme, requestHost, requestPath, randomHtml, isIndex, h1replaced)
+			buffer.Reset()
+			content, err = site.handleHtmlResponse(doc, scheme, requestHost, requestPath, randomHtml, isIndex, h1replaced, buffer)
 			helper.WrapResponseBody(response, content)
 			return nil
 		} else if strings.Contains(contentType, "css") || strings.Contains(contentType, "javascript") {
@@ -195,8 +207,7 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 			for index, find := range site.Finds {
 				content = bytes.ReplaceAll(content, []byte(find), []byte(site.Replaces[index]))
 			}
-			contentStr := site.replaceHost(string(content), requestHost, scheme)
-			content = []byte(contentStr)
+			content = site.replaceHost(content, requestHost, scheme)
 			helper.WrapResponseBody(response, content)
 			return nil
 		}
@@ -242,22 +253,23 @@ func (f *Frontend) Auth() error {
 
 func (f *Frontend) handleCacheResponse(cacheResponse *CacheResponse, site *Site, writer http.ResponseWriter, request *http.Request) {
 	contentType := strings.ToLower(cacheResponse.Header.Get("Content-Type"))
+
 	requestHost := helper.GetHost(request)
 	requestPath := request.URL.Path
 	scheme := request.Context().Value(OriginScheme).(string)
+	buffer := request.Context().Value(BUFFER).(*bytes.Buffer)
 	var content = cacheResponse.Body
 	if strings.Contains(contentType, "text/html") {
 		isIndexPage := helper.IsIndexPage(request.URL)
 		h1regexp, _ := regexp.Compile(`\{\{h1_replace:default\{--(.*?)--}}}`)
 		h1replaced := h1regexp.Match(content)
 		doc, _ := html.Parse(bytes.NewReader(content))
-		content, _ = site.handleHtmlResponse(doc, scheme, requestHost, requestPath, "", isIndexPage, h1replaced)
-
+		content, _ = site.handleHtmlResponse(doc, scheme, requestHost, requestPath, "", isIndexPage, h1replaced, buffer)
 	} else if strings.Contains(contentType, "css") || strings.Contains(contentType, "javascript") {
 		for index, find := range site.Finds {
 			content = bytes.ReplaceAll(content, []byte(find), []byte(site.Replaces[index]))
 		}
-		contentStr := site.replaceHost(string(content), requestHost, scheme)
+		contentStr := site.replaceHost(content, requestHost, scheme)
 		content = []byte(contentStr)
 	}
 

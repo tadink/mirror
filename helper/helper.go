@@ -245,21 +245,22 @@ func IsExist(path string) bool {
 
 }
 
-func ReadResponse(response *http.Response) ([]byte, error) {
+func ReadResponse(response *http.Response, buffer *bytes.Buffer) error {
 	contentEncoding := response.Header.Get("Content-Encoding")
+	defer response.Body.Close()
 	if contentEncoding == "gzip" {
 		reader, gzipErr := gzip.NewReader(response.Body)
 		if gzipErr != nil {
-			return nil, gzipErr
+			return gzipErr
 		}
-		content, err := io.ReadAll(reader)
+		_, err := io.Copy(buffer, reader)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		return content, nil
+		return nil
 	}
-	content, err := io.ReadAll(response.Body)
-	return content, err
+	_, err := io.Copy(buffer, response.Body)
+	return err
 }
 
 func WrapResponseBody(response *http.Response, content []byte) {

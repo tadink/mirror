@@ -73,7 +73,6 @@ func main() {
 }
 
 func startCmd() {
-
 	logger.Init()
 	err := config.Init()
 	if err != nil {
@@ -94,8 +93,7 @@ func startCmd() {
 	application := &app.Application{}
 
 	application.Start()
-
-	ctx, cancelFunc := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.Signal(16))
+	ctx, cancelFunc := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancelFunc()
 	<-ctx.Done()
 	application.Stop()

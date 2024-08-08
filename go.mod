@@ -5,6 +5,7 @@ go 1.22
 require (
 	github.com/glebarez/go-sqlite v1.22.0
 	github.com/liuzl/gocc v0.0.0-20231231122217-0372e1059ca5
+	github.com/wenzhenxi/gorsa v0.0.0-20230530123828-0320cce15d81
 	github.com/xuri/excelize/v2 v2.8.1
 	golang.org/x/net v0.27.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1

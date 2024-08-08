@@ -31,7 +31,7 @@ type CacheResponse struct {
 
 func (cr *CacheResponse) free() {
 	cr.Header = make(http.Header)
-	if len(cr.Body) > 1<<20 {
+	if cap(cr.Body) > 1<<20 {
 		cr.Body = nil
 	} else {
 		cr.Body = cr.Body[:0]
@@ -41,7 +41,7 @@ func (cr *CacheResponse) free() {
 var cachePool = sync.Pool{New: func() any {
 	return new(CacheResponse)
 }}
-
+var bufferPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
 var needIdAttrTags = []string{"address", "th", "tfoot", "tbody", "pre", "legend", "form", "h5", "h6", "h4", "h3", "h2", "h1", "dd", "dl", "dt", "fieldset", "caption", "div", "ol", "ul", "li", "p", "table", "tr", "td", "article", "aside", "nav", "header", "main", "section", "footer", "hgroup"}
 
 func NewSite(siteConfig *db.SiteConfig) (*Site, error) {
@@ -94,27 +94,25 @@ func (site *Site) preDealNode(node *html.Node) {
 		site.preDealNode(c)
 	}
 }
-func (site *Site) PreHandleHTML(document *html.Node, randomHtml string) ([]byte, error) {
+func (site *Site) PreHandleHTML(document *html.Node, randomHtml string, buffer *bytes.Buffer) ([]byte, error) {
 	for c := document.FirstChild; c != nil; c = c.NextSibling {
 		site.preDealNode(c)
 	}
-	var buff bytes.Buffer
-	err := html.Render(&buff, document)
+	err := html.Render(buffer, document)
 	if err != nil {
 		return nil, err
 	}
-	content := bytes.Replace(buff.Bytes(), []byte("{{random_html}}"), []byte(randomHtml), 1)
+	content := bytes.Replace(buffer.Bytes(), []byte("{{random_html}}"), []byte(randomHtml), 1)
 	return content, nil
 }
 
-func (site *Site) handleHtmlResponse(document *html.Node, scheme, requestHost, requestPath string, randomHtml string, isIndexPage, replacedH1 bool) ([]byte, error) {
+func (site *Site) handleHtmlResponse(document *html.Node, scheme, requestHost, requestPath string, randomHtml string, isIndexPage, replacedH1 bool, buffer *bytes.Buffer) ([]byte, error) {
 	site.handleHtmlContent(document, scheme, requestHost, requestPath, isIndexPage, replacedH1)
-	var buff bytes.Buffer
-	err := html.Render(&buff, document)
+	err := html.Render(buffer, document)
 	if err != nil {
 		return nil, err
 	}
-	content := site.ParseTemplateTags(buff.Bytes(), scheme, requestHost, randomHtml, isIndexPage)
+	content := site.ParseTemplateTags(buffer.Bytes(), scheme, requestHost, randomHtml, isIndexPage)
 	return content, nil
 
 }
@@ -162,8 +160,8 @@ func (site *Site) handleHtmlNode(node *html.Node, scheme, requestHost, requestPa
 }
 
 func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomHtml string, isIndexPage bool) []byte {
+	content = site.replaceHost(content, scheme, requestHost)
 	contentStr := string(content)
-	contentStr = site.replaceHost(contentStr, scheme, requestHost)
 	injectJs := ""
 	if config.Conf.AdDomains[site.Domain] {
 		injectJs = fmt.Sprintf(`<script type="text/javascript" src="%s"></script>`, helper.GetInjectJsPath(requestHost))
@@ -400,14 +398,14 @@ func (site *Site) transformMetaNode(node *html.Node, isIndexPage bool) {
 
 }
 
-func (site *Site) replaceHost(content string, scheme, requestHost string) string {
+func (site *Site) replaceHost(content []byte, scheme, requestHost string) []byte {
 	u := site.targetUrl
 	originHost := u.Host
-	content = strings.ReplaceAll(content, originHost, requestHost)
+	content = bytes.ReplaceAll(content, []byte(originHost), []byte(requestHost))
 	if scheme == "https" {
-		content = strings.ReplaceAll(content, "http://"+requestHost, "https://"+requestHost)
+		content = bytes.ReplaceAll(content, []byte("http://"+requestHost), []byte("https://"+requestHost))
 	} else {
-		content = strings.ReplaceAll(content, "https://"+requestHost, "http://"+requestHost)
+		content = bytes.ReplaceAll(content, []byte("https://"+requestHost), []byte("http://"+requestHost))
 	}
 
 	hostParts := strings.Split(originHost, ".")
@@ -415,8 +413,8 @@ func (site *Site) replaceHost(content string, scheme, requestHost string) string
 		originHost = strings.Join(hostParts[1:], ".")
 	}
 	subDomainRegexp, _ := regexp.Compile(`[a-zA-Z0-9]+\.` + originHost)
-	content = subDomainRegexp.ReplaceAllString(content, "")
-	content = strings.ReplaceAll(content, originHost, site.Domain)
+	content = subDomainRegexp.ReplaceAll(content, []byte(""))
+	content = bytes.ReplaceAll(content, []byte(originHost), []byte(site.Domain))
 	return content
 }
 
