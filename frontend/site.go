@@ -2,6 +2,8 @@ package frontend
 
 import (
 	"bytes"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"golang.org/x/net/html"
@@ -27,6 +29,8 @@ type CacheResponse struct {
 	StatusCode int
 	Body       []byte
 	Header     http.Header
+	RandomHtml string
+	RandomIds  []string
 }
 
 func (cr *CacheResponse) free() {
@@ -43,6 +47,7 @@ var cachePool = sync.Pool{New: func() any {
 }}
 var bufferPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
 var needIdAttrTags = []string{"address", "th", "tfoot", "tbody", "pre", "legend", "form", "h5", "h6", "h4", "h3", "h2", "h1", "dd", "dl", "dt", "fieldset", "caption", "div", "ol", "ul", "li", "p", "table", "tr", "td", "article", "aside", "nav", "header", "main", "section", "footer", "hgroup"}
+var chineseRegexp = regexp.MustCompile("^[\u4e00-\u9fa5]+")
 
 func NewSite(siteConfig *db.SiteConfig) (*Site, error) {
 	u, err := url.Parse(siteConfig.Url)
@@ -64,50 +69,8 @@ func NewSite(siteConfig *db.SiteConfig) (*Site, error) {
 
 	return site, nil
 }
-func (site *Site) addNodeIdAttr(node *html.Node) {
-	hasId := false
-	for _, attr := range node.Attr {
-		if strings.EqualFold(attr.Key, "id") {
-			hasId = true
-		}
-	}
-	if !hasId && slices.Contains(needIdAttrTags, node.Data) {
-		node.Attr = append(node.Attr, html.Attribute{Key: "id", Val: helper.RandStr(4, 8)})
-	}
-}
-func (site *Site) addRandomHTML(node *html.Node) {
-	if node.Data != "body" {
-		return
-	}
-	node.InsertBefore(&html.Node{
-		Type: html.TextNode,
-		Data: "{{random_html}}",
-	}, node.FirstChild)
-}
-func (site *Site) preDealNode(node *html.Node) {
-	site.addNodeIdAttr(node)
-	site.addRandomHTML(node)
-	if node.Data == "h1" && node.FirstChild != nil && node.FirstChild.Type == html.TextNode {
-		node.FirstChild.Data = fmt.Sprintf("{{h1_replace:default{--%s--}}}", node.FirstChild.Data)
-	}
-	for c := node.FirstChild; c != nil; c = c.NextSibling {
-		site.preDealNode(c)
-	}
-}
-func (site *Site) PreHandleHTML(document *html.Node, randomHtml string, buffer *bytes.Buffer) ([]byte, error) {
-	for c := document.FirstChild; c != nil; c = c.NextSibling {
-		site.preDealNode(c)
-	}
-	err := html.Render(buffer, document)
-	if err != nil {
-		return nil, err
-	}
-	content := bytes.Replace(buffer.Bytes(), []byte("{{random_html}}"), []byte(randomHtml), 1)
-	return content, nil
-}
-
-func (site *Site) handleHtmlResponse(document *html.Node, scheme, requestHost, requestPath string, randomHtml string, isIndexPage, replacedH1 bool, buffer *bytes.Buffer) ([]byte, error) {
-	site.handleHtmlContent(document, scheme, requestHost, requestPath, isIndexPage, replacedH1)
+func (site *Site) handleHtmlResponse(document *html.Node, scheme, requestHost, requestPath string, randomHtml string, isIndexPage bool, buffer *bytes.Buffer) ([]byte, error) {
+	site.handleHtmlNode(document, scheme, requestHost, requestPath, isIndexPage)
 	err := html.Render(buffer, document)
 	if err != nil {
 		return nil, err
@@ -117,12 +80,7 @@ func (site *Site) handleHtmlResponse(document *html.Node, scheme, requestHost, r
 
 }
 
-func (site *Site) handleHtmlContent(document *html.Node, scheme, requestHost, requestPath string, isIndexPage, replacedH1 bool) {
-	for c := document.FirstChild; c != nil; c = c.NextSibling {
-		site.handleHtmlNode(c, scheme, requestHost, requestPath, isIndexPage, replacedH1)
-	}
-}
-func (site *Site) handleHtmlNode(node *html.Node, scheme, requestHost, requestPath string, isIndexPage bool, replacedH1 bool) {
+func (site *Site) handleHtmlNode(node *html.Node, scheme, requestHost, requestPath string, isIndexPage bool) {
 	switch node.Type {
 	case html.TextNode, html.CommentNode, html.RawNode:
 		node.Data = site.transformText(node.Data)
@@ -143,10 +101,13 @@ func (site *Site) handleHtmlNode(node *html.Node, scheme, requestHost, requestPa
 			site.transformMetaNode(node, isIndexPage)
 		}
 		if node.Data == "body" {
-			site.transformBodyNode(node, isIndexPage, replacedH1)
+			site.transformBodyNode(node, isIndexPage)
 		}
 		if node.Data == "head" {
 			site.transformHeadNode(node)
+		}
+		if node.Data == "h1" && node.FirstChild != nil && node.FirstChild.Type == html.TextNode && site.H1Replace != "" {
+			node.FirstChild.Data = site.H1Replace
 		}
 		site.transformNodeAttr(node)
 
@@ -154,7 +115,7 @@ func (site *Site) handleHtmlNode(node *html.Node, scheme, requestHost, requestPa
 
 	}
 	for c := node.FirstChild; c != nil; c = c.NextSibling {
-		site.handleHtmlNode(c, scheme, requestHost, requestPath, isIndexPage, replacedH1)
+		site.handleHtmlNode(c, scheme, requestHost, requestPath, isIndexPage)
 	}
 
 }
@@ -163,35 +124,35 @@ func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomH
 	content = site.replaceHost(content, scheme, requestHost)
 	contentStr := string(content)
 	injectJs := ""
-	if config.Conf.AdDomains[site.Domain] {
-		injectJs = fmt.Sprintf(`<script type="text/javascript" src="%s"></script>`, helper.GetInjectJsPath(requestHost))
+	if scheme == "https" {
+		injectJs += `<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">`
 	}
-	contentStr = strings.Replace(contentStr, "{{inject_js}}", injectJs, 1)
+	if config.Conf.AdDomains[site.Domain] {
+		injectJs += fmt.Sprintf(`<script type="text/javascript" src="%s"></script>`, helper.GetInjectJsPath(requestHost))
+	}
 
+	contentStr = strings.Replace(contentStr, "{{inject_js}}", injectJs, 1)
 	if isIndexPage {
-		friendLink := site.friendLink(site.Domain)
+		friendLink := helper.FriendLink(site.Domain)
 		contentStr = strings.Replace(contentStr, "{{friend_links}}", friendLink, 1)
 		contentStr = strings.Replace(contentStr, "{{index_title}}", site.IndexTitle, 1)
-		contentStr = strings.Replace(contentStr, "{{index_keywords}}", site.IndexKeywords, 1)
-		contentStr = strings.Replace(contentStr, "{{index_description}}", site.IndexDescription, 1)
-	}
-	contentStr = strings.Replace(contentStr, "{{random_html}}", randomHtml, 1)
-	h1regexp, _ := regexp.Compile(`\{\{h1_replace:default\{--(.*?)--}}}`)
-	h1Tag := h1regexp.FindStringSubmatch(contentStr)
-	if h1Tag != nil {
-		if h1Tag[1] == "null" {
-			if site.H1Replace == "" {
-				contentStr = strings.Replace(contentStr, "<h1>"+h1Tag[0]+"</h1>", site.H1Replace, 1)
-			} else {
-				contentStr = strings.Replace(contentStr, h1Tag[0], site.H1Replace, 1)
-			}
+		if strings.Contains(contentStr, "{{index_description}}") {
+			contentStr = strings.Replace(contentStr, "{{index_description}}", site.IndexDescription, 1)
 		} else {
-			if site.H1Replace == "" {
-				contentStr = strings.Replace(contentStr, h1Tag[0], h1Tag[1], 1)
-			} else {
-				contentStr = strings.Replace(contentStr, h1Tag[0], site.H1Replace, 1)
-			}
+			r := fmt.Sprintf(`</title><meta name="description" content="%s">`, site.IndexDescription)
+			contentStr = strings.Replace(contentStr, "</title>", r, 1)
 		}
+		if strings.Contains(contentStr, "{{index_keywords}}") {
+			contentStr = strings.Replace(contentStr, "{{index_keywords}}", site.IndexKeywords, 1)
+		} else {
+			r := fmt.Sprintf(`</title><meta name="keywords" content="%s">`, site.IndexKeywords)
+			contentStr = strings.Replace(contentStr, "</title>", r, 1)
+		}
+	}
+	randomHtml = strings.ReplaceAll(randomHtml, "{{scheme}}", scheme)
+	contentStr = strings.Replace(contentStr, "{{random_html}}", randomHtml, 1)
+	if !strings.Contains(contentStr, "<h1") {
+		contentStr = strings.Replace(contentStr, "{{h1_tag}}", site.H1Replace, 1)
 	}
 
 	keywordRegexp, _ := regexp.Compile(`\{\{keyword:(\d+)}}`)
@@ -212,7 +173,8 @@ func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomH
 		}
 		contentStr = strings.ReplaceAll(contentStr, replaceTag[0], site.Replaces[index])
 	}
-	return []byte(contentStr)
+	result := []byte(contentStr)
+	return result
 }
 
 func (site *Site) transformText(text string) string {
@@ -221,7 +183,6 @@ func (site *Site) transformText(text string) string {
 		text = strings.ReplaceAll(text, find, tag)
 	}
 	if site.S2t {
-		chineseRegexp, _ := regexp.Compile("^[\u4e00-\u9fa5]+")
 		text = chineseRegexp.ReplaceAllStringFunc(text, func(s string) string {
 			result, _ := S2T.Convert(s)
 			return result
@@ -234,10 +195,15 @@ func (site *Site) transformHeadNode(node *html.Node) {
 		Type: html.TextNode,
 		Data: "{{inject_js}}",
 	})
+
 }
 
 func (site *Site) transformNodeAttr(node *html.Node) {
+	hasId := false
+	var attrString bytes.Buffer
+	attrString.WriteString(node.Data)
 	for i, attr := range node.Attr {
+		attrString.WriteString(attr.Key + attr.Val)
 		if strings.EqualFold(attr.Key, "title") ||
 			strings.EqualFold(attr.Key, "alt") ||
 			strings.EqualFold(attr.Key, "value") ||
@@ -251,21 +217,35 @@ func (site *Site) transformNodeAttr(node *html.Node) {
 			if site.S2t {
 				node.Attr[i].Val, _ = S2T.Convert(attr.Val)
 			}
+
 		}
+		if strings.EqualFold(attr.Key, "id") {
+			hasId = true
+		}
+
+	}
+	if slices.Contains(needIdAttrTags, node.Data) && !hasId {
+		sum := md5.Sum(attrString.Bytes())
+		h := hex.EncodeToString(sum[:])
+		id := ""
+		if len(site.Domain) > 16 {
+			id = h[:8]
+		} else {
+			id = h[:6]
+		}
+		node.Attr = append(node.Attr, html.Attribute{Key: "id", Val: id})
 	}
 
 }
-func (site *Site) transformBodyNode(node *html.Node, isIndexPage, replacedH1 bool) {
-	if !replacedH1 {
-		node.InsertBefore(&html.Node{
-			Type: html.ElementNode,
-			Data: "h1",
-			FirstChild: &html.Node{
-				Type: html.TextNode,
-				Data: "{{h1_replace:default{--null--}}}",
-			},
-		}, node.FirstChild)
+func (site *Site) transformBodyNode(node *html.Node, isIndexPage bool) {
+	tag := "{{random_html}}"
+	if site.H1Replace != "" {
+		tag = "{{h1_tag}}{{random_html}}"
 	}
+	node.InsertBefore(&html.Node{
+		Type: html.TextNode,
+		Data: tag,
+	}, node.FirstChild)
 
 	if !isIndexPage {
 		return
@@ -293,7 +273,7 @@ func (site *Site) transformANode(node *html.Node, scheme, requestHost, requestPa
 			node.Attr[i].Val = u.String()
 			break
 		}
-		if u.Path == "" {
+		if u.Path == "" || u.Path == "/" {
 			//path为空，是友情链接，全部删除
 			//node.Attr[i].Val = "#"
 			node.Attr[i].Val = "#"
@@ -399,36 +379,24 @@ func (site *Site) transformMetaNode(node *html.Node, isIndexPage bool) {
 }
 
 func (site *Site) replaceHost(content []byte, scheme, requestHost string) []byte {
-	u := site.targetUrl
-	originHost := u.Host
+	originHost := site.targetUrl.Host
 	content = bytes.ReplaceAll(content, []byte(originHost), []byte(requestHost))
 	if scheme == "https" {
 		content = bytes.ReplaceAll(content, []byte("http://"+requestHost), []byte("https://"+requestHost))
 	} else {
 		content = bytes.ReplaceAll(content, []byte("https://"+requestHost), []byte("http://"+requestHost))
 	}
-
 	hostParts := strings.Split(originHost, ".")
 	if len(hostParts) >= 3 {
 		originHost = strings.Join(hostParts[1:], ".")
 	}
-	subDomainRegexp, _ := regexp.Compile(`[a-zA-Z0-9]+\.` + originHost)
-	content = subDomainRegexp.ReplaceAll(content, []byte(""))
+	s := []byte("." + originHost)
+	if bytes.Contains(content, s) {
+		//subDomainRegexp, _ := regexp.Compile(`[a-zA-Z0-9]+\.` + originHost)
+		//content = subDomainRegexp.ReplaceAll(content, []byte(""))
+		content = bytes.ReplaceAll(content, s, []byte(""))
+	}
+
 	content = bytes.ReplaceAll(content, []byte(originHost), []byte(site.Domain))
 	return content
-}
-
-func (site *Site) friendLink(domain string) string {
-	if len(config.Conf.FriendLinks[domain]) <= 0 {
-		return ""
-	}
-	var friendLink string
-	for _, link := range config.Conf.FriendLinks[domain] {
-		linkItem := strings.Split(link, ",")
-		if len(linkItem) != 2 {
-			continue
-		}
-		friendLink += fmt.Sprintf("<a href='%s' target='_blank'>%s</a>", linkItem[0], linkItem[1])
-	}
-	return fmt.Sprintf("<div style='display:none'>%s</div>", friendLink)
 }

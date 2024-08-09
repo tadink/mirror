@@ -11,7 +11,6 @@ import (
 	"math/rand/v2"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"seo/mirror/config"
 	"strconv"
@@ -41,15 +40,15 @@ func GetInjectJsPath(host string) string {
 
 }
 
-func IsIndexPage(u *url.URL) bool {
-	return u.Path == "" ||
-		strings.EqualFold(u.Path, "/") ||
-		strings.EqualFold(u.Path, "/index.php") ||
-		strings.EqualFold(u.Path, "/index.asp") ||
-		strings.EqualFold(u.Path, "/index.jsp") ||
-		strings.EqualFold(u.Path, "/index.htm") ||
-		strings.EqualFold(u.Path, "/index.html") ||
-		strings.EqualFold(u.Path, "/index.shtml")
+func IsIndexPage(path string) bool {
+	return path == "" ||
+		strings.EqualFold(path, "/") ||
+		strings.EqualFold(path, "/index.php") ||
+		strings.EqualFold(path, "/index.asp") ||
+		strings.EqualFold(path, "/index.jsp") ||
+		strings.EqualFold(path, "/index.htm") ||
+		strings.EqualFold(path, "/index.html") ||
+		strings.EqualFold(path, "/index.shtml")
 
 }
 func GBK2UTF8(content []byte, contentType string) []byte {
@@ -100,16 +99,29 @@ func isPublicIP(IP net.IP) bool {
 	}
 	return false
 }
-func RandHtml(domain string, schema string) string {
+func Intersection(a []string, b []net.IP) bool {
+	m := make(map[string]bool)
+	for _, x := range a {
+		m[x] = true
+	}
+	for _, y := range b {
+		if m[y.String()] {
+			return true
+		}
+	}
+	return false
+}
+
+func RandHtml(domain string) string {
 	htmlTags := []string{"abbr", "address", "area", "article", "aside", "b", "base", "bdo", "blockquote", "button", "cite", "code", "dd", "del", "details", "dfn", "dl", "dt", "em", "figure", "font", "i", "ins", "kbd", "label", "legend", "li", "mark", "meter", "ol", "option", "p", "q", "progress", "rt", "ruby", "samp", "section", "select", "small", "strong", "tt", "u"}
 	var result string
 	for i := 0; i < 100; i++ {
 		if domainParts := strings.Split(domain, "."); ((IsDoubleSuffixDomain(domain) && len(domainParts) == 3) || len(domainParts) == 2) && rand.IntN(100) < 20 {
-			result = result + fmt.Sprintf(`<a href="%s" target="_blank">%s</a>`, schema+"://"+RandStr(3, 5)+"."+domain, RandStr(6, 16))
+			result = result + fmt.Sprintf(`<a href="%s" target="_blank">%s</a>`, "{{scheme}}://"+RandStr(3, 5)+"."+domain, RandStr(6, 16))
 			continue
 		}
 		t := htmlTags[rand.IntN(len(htmlTags))]
-		result = result + fmt.Sprintf(`<%s id="%s">%s</%s>`, t, RandStr(4, 8), RandStr(6, 16), t)
+		result = result + fmt.Sprintf(`<%s id="%s" class="%s">%s</%s>`, t, RandStr(4, 8), RandStr(4, 8), RandStr(6, 16), t)
 	}
 	return "<div style=\"display:none\">" + result + "</div>"
 }
@@ -132,7 +144,7 @@ func genUserAndPass() (string, string) {
 	}
 	chars = []rune("abcdefghijklmnopqrstuvwxyz1234567890")
 	pass := ""
-	for i := 0; i < 12; i++ {
+	for i := 0; i < 18; i++ {
 		pass = pass + string(chars[rand.IntN(len(chars))])
 	}
 	return user, pass
@@ -269,4 +281,18 @@ func WrapResponseBody(response *http.Response, content []byte) {
 	response.Body = readAndCloser
 	response.ContentLength = contentLength
 	response.Header.Set("Content-Length", strconv.FormatInt(contentLength, 10))
+}
+func FriendLink(domain string) string {
+	if len(config.Conf.FriendLinks[domain]) < 1 {
+		return ""
+	}
+	var friendLink string
+	for _, link := range config.Conf.FriendLinks[domain] {
+		linkItem := strings.Split(link, ",")
+		if len(linkItem) != 2 {
+			continue
+		}
+		friendLink += fmt.Sprintf("<a href='%s' target='_blank'>%s</a>", linkItem[0], linkItem[1])
+	}
+	return fmt.Sprintf("<div style='display:none'>%s</div>", friendLink)
 }

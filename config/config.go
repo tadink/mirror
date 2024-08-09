@@ -3,12 +3,9 @@ package config
 import (
 	"encoding/json"
 	"errors"
-	"net"
+	"github.com/wenzhenxi/gorsa"
 	"os"
 	"strings"
-	"time"
-
-	"github.com/wenzhenxi/gorsa"
 )
 
 type Config struct {
@@ -115,21 +112,7 @@ func getAuthInfo() (*AuthInfo, error) {
 	if err != nil {
 		return nil, errors.Join(errors.New("json 解析错误"), err)
 	}
-	t, err := time.Parse("2006-01-02", authInfo.Date)
-	if err != nil {
-		return nil, errors.Join(errors.New("日期格式错误"), err)
-	}
-	if time.Since(t) > 0 {
-		return nil, errors.New("有效期超时")
-	}
-	localIP, _ := getLocalAddresses()
-	if len(localIP) < 1 {
-		return nil, errors.New("未获取到有效IP")
-	}
-	if !Intersection(localIP, authInfo.IPList) {
-		return nil, errors.New("IP地址验证不通过")
-	}
-	return &AuthInfo{Date: "2025-12-31"}, nil
+	return &authInfo, nil
 }
 
 func readLinks() map[string][]string {
@@ -147,35 +130,4 @@ func readLinks() map[string][]string {
 		result[linkArr[0]] = linkArr[1:]
 	}
 	return result
-}
-func getLocalAddresses() ([]string, error) {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return nil, err
-	}
-
-	var ips []string
-	for _, addr := range addrs {
-		ipNet, ok := addr.(*net.IPNet)
-		if !ok || ipNet.IP.IsLoopback() {
-			continue
-		}
-		if v4 := ipNet.IP.To4(); v4 != nil {
-			ips = append(ips, v4.String())
-		}
-	}
-
-	return ips, nil
-}
-func Intersection(a, b []string) bool {
-	m := make(map[string]bool)
-	for _, x := range a {
-		m[x] = true
-	}
-	for _, y := range b {
-		if m[y] {
-			return true
-		}
-	}
-	return false
 }
