@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"golang.org/x/net/html/charset"
@@ -29,7 +30,8 @@ func GetHost(request *http.Request) string {
 	return host
 }
 func GetInjectJsPath(host string) string {
-	name := fmt.Sprintf("%x", md5.Sum([]byte(host)))
+	hash := md5.Sum([]byte(host))
+	name := hex.EncodeToString(hash[:])
 	if len(host) >= 6 {
 		lastDotIndex := strings.LastIndex(host, ".")
 		dirPart := host[:lastDotIndex]

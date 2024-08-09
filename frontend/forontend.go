@@ -189,7 +189,6 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 			if err != nil {
 				return err
 			}
-
 			requestPath := response.Request.URL.Path
 			isIndex := helper.IsIndexPage(requestPath)
 			buffer.Reset()

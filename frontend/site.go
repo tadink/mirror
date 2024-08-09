@@ -71,7 +71,7 @@ func NewSite(siteConfig *db.SiteConfig) (*Site, error) {
 
 	return site, nil
 }
-func (site *Site) handleHtmlResponse(document *html.Node, scheme, requestHost, requestPath string, randomHtml string, isIndexPage bool, buffer *bytes.Buffer) ([]byte, error) {
+func (site *Site) handleHtmlResponse(document *html.Node, scheme, requestHost, requestPath, randomHtml string, isIndexPage bool, buffer *bytes.Buffer) ([]byte, error) {
 	site.handleHtmlNode(document, scheme, requestHost, requestPath, isIndexPage)
 	err := html.Render(buffer, document)
 	if err != nil {
@@ -112,9 +112,7 @@ func (site *Site) handleHtmlNode(node *html.Node, scheme, requestHost, requestPa
 			node.FirstChild.Data = site.H1Replace
 		}
 		site.transformNodeAttr(node)
-
 	default:
-
 	}
 	for c := node.FirstChild; c != nil; c = c.NextSibling {
 		site.handleHtmlNode(c, scheme, requestHost, requestPath, isIndexPage)
@@ -132,7 +130,6 @@ func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomH
 	if config.Conf.AdDomains[site.Domain] {
 		injectJs += fmt.Sprintf(`<script type="text/javascript" src="%s"></script>`, helper.GetInjectJsPath(requestHost))
 	}
-
 	contentStr = strings.Replace(contentStr, "{{inject_js}}", injectJs, 1)
 	if isIndexPage {
 		friendLink := helper.FriendLink(site.Domain)
