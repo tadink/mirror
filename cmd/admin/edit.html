@@ -149,12 +149,11 @@
                             <script src="/static/layui/layui.js"></script>
                             <script>
                                 layui.use(['form', 'jquery', 'layer'], function () {
-                                    var form = layui.form;
-                                    var jq = layui.jquery;
-                                    var layer = layui.layer;
+                                    const form = layui.form;
+                                    const jq = layui.jquery;
+                                    const layer = layui.layer;
                                     jq('#back').on('click',function(){
                                         top.location.href='{{.admin_uri}}';
-                                        return
                                     });
                                     //监听提交
                                     form.on('submit(save_config)', function (data) {
@@ -165,7 +164,7 @@
                                             dataType: 'JSON',
                                             success: function (res) {
                                                 if (res.code === 0) {
-                                                    if (res.action == "add") {
+                                                    if (res.action === "add") {
                                                         layer.alert("添加成功")
                                                         top.location.href = "{{.admin_uri}}";
                                                     } else {

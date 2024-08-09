@@ -2,6 +2,7 @@ package backend
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,9 +42,7 @@ func NewBackend(frontend *frontend.Frontend) (*Backend, error) {
 	b.Initialize()
 	return b, nil
 }
-func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	b.Mux.ServeHTTP(w, r)
-}
+
 func (b *Backend) Initialize() {
 	fileHandler := http.FileServer(http.Dir("admin"))
 	b.Mux = http.NewServeMux()
@@ -58,7 +57,6 @@ func (b *Backend) Initialize() {
 	b.Mux.Handle(prefix+"/login", b.AuthMiddleware(b.login))
 	b.Mux.Handle(prefix, b.AuthMiddleware(b.index))
 	b.Mux.Handle(prefix+"/site", b.AuthMiddleware(b.site))
-	b.Mux.Handle(prefix+"/record", b.AuthMiddleware(b.record))
 
 	b.Mux.Handle(prefix+"/list", b.AuthMiddleware(b.siteList))
 	b.Mux.Handle(prefix+"/edit", b.AuthMiddleware(b.editSite))
@@ -74,12 +72,14 @@ func (b *Backend) Initialize() {
 	b.Mux.Handle(prefix+"/save_base_config", b.AuthMiddleware(b.saveBaseConfig))
 
 }
-
+func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	b.Mux.ServeHTTP(w, r)
+}
 func (b *Backend) AuthMiddleware(h func(w http.ResponseWriter, r *http.Request)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, _ := r.Cookie("login_cert")
 		sum := sha256.New().Sum([]byte(b.UserName + b.Password))
-		loginSign := fmt.Sprintf("%x", sum)
+		loginSign := hex.EncodeToString(sum)
 		if r.URL.Path != b.prefix+"/login" && (cookie == nil || cookie.Value != loginSign) {
 			http.Redirect(w, r, b.prefix+"/login", http.StatusMovedPermanently)
 			return
@@ -123,6 +123,7 @@ func (b *Backend) multiDel(writer http.ResponseWriter, request *http.Request) {
 	if err != nil {
 		slog.Error("MulDel ParseForm error:" + err.Error())
 		_, _ = writer.Write([]byte(`{"code":5,"msg":"请求数据出错"}`))
+		return
 	}
 	domains := request.Form.Get("domains")
 	if domains == "" {
@@ -167,17 +168,6 @@ func (b *Backend) site(w http.ResponseWriter, request *http.Request) {
 		slog.Error("index template error:" + err.Error())
 	}
 }
-func (b *Backend) record(w http.ResponseWriter, request *http.Request) {
-	t, err := template.ParseFiles("admin/record.html")
-	if err != nil {
-		slog.Error("index template error:" + err.Error())
-		return
-	}
-	err = t.Execute(w, map[string]string{"admin_uri": b.prefix})
-	if err != nil {
-		slog.Error("index template error:" + err.Error())
-	}
-}
 
 func (b *Backend) forbiddenWords(writer http.ResponseWriter, request *http.Request) {
 	if request.Method == "GET" {
@@ -193,6 +183,7 @@ func (b *Backend) forbiddenWords(writer http.ResponseWriter, request *http.Reque
 	if err != nil {
 		slog.Error("forbiddenWords parse form error:" + err.Error())
 		_, _ = writer.Write([]byte(`{"code":5,"msg":"请求参数错误"}`))
+		return
 	}
 	forbiddenWord := request.Form.Get("forbidden_word")
 	replaceWord := request.Form.Get("replace_word")
@@ -209,7 +200,7 @@ func (b *Backend) forbiddenWords(writer http.ResponseWriter, request *http.Reque
 	}
 	for _, value := range domainArr {
 		da := strings.Split(value, "##")
-		b.deleteCache(da[0])
+		_ = b.deleteCache(da[0])
 		un, ok := b.frontend.Sites.Load(da[0])
 		if ok {
 			site := un.(*frontend.Site)
@@ -282,7 +273,7 @@ func (b *Backend) siteList(writer http.ResponseWriter, request *http.Request) {
 		return
 
 	}
-	proxys, err := db.GetByPage(p, size)
+	proxies, err := db.GetByPage(p, size)
 	if err != nil {
 		result["code"] = 2
 		result["msg"] = err.Error()
@@ -301,7 +292,7 @@ func (b *Backend) siteList(writer http.ResponseWriter, request *http.Request) {
 	result["code"] = 0
 	result["msg"] = ""
 	result["count"] = count
-	result["data"] = proxys
+	result["data"] = proxies
 	data, _ := json.Marshal(result)
 	_, _ = writer.Write(data)
 
@@ -310,6 +301,7 @@ func (b *Backend) siteSave(writer http.ResponseWriter, request *http.Request) {
 	err := request.ParseForm()
 	if err != nil {
 		_, _ = writer.Write([]byte(`{"code":5,"msg":"请求数据出错"}`))
+		return
 	}
 
 	id := request.Form.Get("id")
@@ -347,8 +339,8 @@ func (b *Backend) siteSave(writer http.ResponseWriter, request *http.Request) {
 		S2t:              request.Form.Get("s2t") == "on",
 		CacheEnable:      request.Form.Get("cache_enable") == "on",
 		CacheTime:        cacheTime,
-		BaiduPushKey:     request.Form.Get("baidu_push_key"),
-		SmPushKey:        request.Form.Get("sm_push_key"),
+		BaiduPushKey:     "",
+		SmPushKey:        "",
 	}
 
 	if siteConfig.Id == 0 {
@@ -394,7 +386,7 @@ func (b *Backend) siteDelete(writer http.ResponseWriter, request *http.Request) 
 		return
 	}
 	b.frontend.Sites.Delete(domain)
-	b.deleteCache(domain)
+	_ = b.deleteCache(domain)
 	_, _ = writer.Write([]byte("{\"code\":0}"))
 
 }
@@ -589,6 +581,7 @@ func (b *Backend) DeleteCache(writer http.ResponseWriter, request *http.Request)
 	if err != nil {
 		result := fmt.Sprintf(`{"code":5,"msg":"%s""}`, err.Error())
 		_, _ = writer.Write([]byte(result))
+		return
 	}
 	_, _ = writer.Write([]byte(`{"code":0}`))
 

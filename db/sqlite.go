@@ -183,7 +183,7 @@ func MultiDel(domains []string) error {
 	for i, id := range domains {
 		args[i] = id
 	}
-	delSql := `delete from website_config where domain in (?` + strings.Repeat(",?", len(args)-1) + `)`
+	delSql := fmt.Sprintf(`delete from website_config where domain in (?%s)`, strings.Repeat(",?", len(args)-1))
 	_, err := DB.Exec(delSql, args...)
 	if err != nil {
 		return err

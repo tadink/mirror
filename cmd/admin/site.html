@@ -1,9 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-
     <title>镜像后台</title>
     <meta name="renderer" content="webkit">
     <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
@@ -138,16 +137,16 @@
 
 
                 table.on('toolbar(site-list-table)', function (obj) {
-                    if (obj.event == "add_config") {
+                    if (obj.event === "add_config") {
                         top.location.href = "{{.admin_uri}}/edit"
                         return;
                     }
                    
-                    if (obj.event == "import") {
+                    if (obj.event === "import") {
                         jq("#import").click();
                         return;
                     }
-                    if (obj.event == "multi_del") {
+                    if (obj.event === "multi_del") {
                         layer.prompt({
                             title: "填写域名，一行一个",
                             area: ['600px', '350px'],
@@ -160,7 +159,7 @@
                                 data: { "domains": text },
                                 dataType: "JSON",
                                 success: function (res) {
-                                    if (res.code == 0) {
+                                    if (res.code === 0) {
                                         layer.msg("删除成功");
                                         layer.close(index);
                                         location.reload();
@@ -187,7 +186,7 @@
                     }
                     , done: function (res) {
                         //上传完毕回调
-                        if (res.code == 0) {
+                        if (res.code === 0) {
                             layer.alert("导入成功");
                             setTimeout(function () {
                                 location.reload();
@@ -204,11 +203,11 @@
                 });
 
                 table.on('tool(site-list-table)', function (obj) {
-                    if (obj.event == 'edit') {
+                    if (obj.event === 'edit') {
                         top.location.href = "{{.admin_uri}}/edit?url=" + obj.data.domain;
                         return;
                     } 
-                     if (obj.event == "delete") {
+                     if (obj.event === "delete") {
                         layer.confirm('确定删除' + obj.data.domain + '配置吗?', { icon: 3, title: '提示' }, function (index) {
                             //do something
                             jq.ajax({
@@ -233,7 +232,7 @@
                         });
                     } 
                     
-                    if (obj.event == "del_cache") {
+                    if (obj.event === "del_cache") {
                         layer.confirm("确定删除" + obj.data.domain + "缓存吗？", { icon: 3, title: "提示" }, function (index) {
                             jq.ajax({
                                 url: '{{.admin_uri}}/delete_cache?domain=' + obj.data.domain,
@@ -257,7 +256,6 @@
                 });
             });
         </script>
-    </div>
     </div>
 </body>
 

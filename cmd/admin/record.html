@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
@@ -107,8 +107,7 @@
                                 let hours = String(date.getHours()).padStart(2, 0);
                                 let minutes = String(date.getMinutes()).padStart(2, 0);
                                 let seconds = String(date.getSeconds()).padStart(2, 0);
-                                let formmaterStr = year + "-" + month + "-" + day + " " + hours + ":" + minutes + ":" + seconds;
-                                res.data[i].created_time = formmaterStr;
+                                res.data[i].created_time = year + "-" + month + "-" + day + " " + hours + ":" + minutes + ":" + seconds;
                             }
                         }
                         return res;
@@ -149,7 +148,7 @@
                         method: 'get',
                         dataType: "JSON",
                         success: function (res) {
-                            if (res.code == 0) {
+                            if (res.code === 0) {
                                 layer.msg("删除成功");
                                 location.reload();
                             } else {
@@ -163,7 +162,6 @@
                 })
             });
         </script>
-    </div>
     </div>
 </body>
 

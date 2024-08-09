@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
     <title>镜像后台</title>
@@ -53,9 +53,9 @@
                         <script src="/static/layui/layui.js"></script>
                         <script>
                             layui.use(['form','jquery','layer'], function(){
-                                var form = layui.form;
-                                var jq=layui.jquery;
-                                var layer=layui.layer;
+                                const form = layui.form;
+                                const jq=layui.jquery;
+                                const layer=layui.layer;
                                 //监听提交
                                 form.on('submit(save_config)', function(data){
                                     jq.ajax({
@@ -84,7 +84,6 @@
             </div>
         </div>
     </div>
-</div>
 </div>
 </body>
 </html>

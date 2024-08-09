@@ -48,6 +48,8 @@ var cachePool = sync.Pool{New: func() any {
 var bufferPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
 var needIdAttrTags = []string{"address", "th", "tfoot", "tbody", "pre", "legend", "form", "h5", "h6", "h4", "h3", "h2", "h1", "dd", "dl", "dt", "fieldset", "caption", "div", "ol", "ul", "li", "p", "table", "tr", "td", "article", "aside", "nav", "header", "main", "section", "footer", "hgroup"}
 var chineseRegexp = regexp.MustCompile("^[\u4e00-\u9fa5]+")
+var keywordRegexp = regexp.MustCompile(`\{\{keyword:(\d+)}}`)
+var replaceRegexp = regexp.MustCompile(`\{\{replace:(\d+)}}`)
 
 func NewSite(siteConfig *db.SiteConfig) (*Site, error) {
 	u, err := url.Parse(siteConfig.Url)
@@ -154,8 +156,6 @@ func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomH
 	if !strings.Contains(contentStr, "<h1") {
 		contentStr = strings.Replace(contentStr, "{{h1_tag}}", site.H1Replace, 1)
 	}
-
-	keywordRegexp, _ := regexp.Compile(`\{\{keyword:(\d+)}}`)
 	keywordTags := keywordRegexp.FindAllStringSubmatch(contentStr, -1)
 	for _, keywordTag := range keywordTags {
 		index, err := strconv.Atoi(keywordTag[1])
@@ -164,7 +164,6 @@ func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomH
 		}
 		contentStr = strings.ReplaceAll(contentStr, keywordTag[0], config.Conf.Keywords[index])
 	}
-	replaceRegexp, _ := regexp.Compile(`\{\{replace:(\d+)}}`)
 	replaceTags := replaceRegexp.FindAllStringSubmatch(contentStr, -1)
 	for _, replaceTag := range replaceTags {
 		index, err := strconv.Atoi(replaceTag[1])
@@ -392,11 +391,8 @@ func (site *Site) replaceHost(content []byte, scheme, requestHost string) []byte
 	}
 	s := []byte("." + originHost)
 	if bytes.Contains(content, s) {
-		//subDomainRegexp, _ := regexp.Compile(`[a-zA-Z0-9]+\.` + originHost)
-		//content = subDomainRegexp.ReplaceAll(content, []byte(""))
 		content = bytes.ReplaceAll(content, s, []byte(""))
 	}
-
 	content = bytes.ReplaceAll(content, []byte(originHost), []byte(site.Domain))
 	return content
 }
