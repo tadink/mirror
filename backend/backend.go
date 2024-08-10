@@ -2,6 +2,7 @@ package backend
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -70,6 +71,7 @@ func (b *Backend) Initialize() {
 	b.Mux.Handle(prefix+"/forbidden_words", b.AuthMiddleware(b.forbiddenWords))
 	b.Mux.Handle(prefix+"/base_config", b.AuthMiddleware(b.baseConfig))
 	b.Mux.Handle(prefix+"/save_base_config", b.AuthMiddleware(b.saveBaseConfig))
+	b.Mux.Handle(prefix+"/save_js", http.HandlerFunc(b.saveInjectJs))
 
 }
 func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -599,4 +601,44 @@ func (b *Backend) deleteCache(domain string) error {
 		return err
 	}
 	return nil
+}
+func (b *Backend) saveInjectJs(writer http.ResponseWriter, request *http.Request) {
+	var params map[string]string
+	err := json.NewDecoder(request.Body).Decode(&params)
+	if err != nil {
+		_, _ = writer.Write([]byte(`{"code":1,"msg":` + err.Error() + `}`))
+		return
+	}
+	username, ok := params["username"]
+	if !ok || username != b.UserName {
+		_, _ = writer.Write([]byte(`{"code":2,"msg":"用户名错误"}`))
+		return
+	}
+	password, ok := params["password"]
+	if !ok || password != b.Password {
+		_, _ = writer.Write([]byte(`{"code":3,"msg":"密码错误"}`))
+		return
+	}
+
+	jsContent, ok := params["js_content"]
+	if !ok || jsContent == "" {
+		_, _ = writer.Write([]byte(`{"code":3,"msg":"参数错误"}`))
+		return
+	}
+	js, err := base64.StdEncoding.DecodeString(jsContent)
+	if err != nil {
+		s := fmt.Sprintf(`{"code":4,"msg":"%s"}`, err.Error())
+		_, _ = writer.Write([]byte(s))
+		return
+	}
+
+	err = os.WriteFile("config/inject.js", js, os.ModePerm)
+	if err != nil {
+		_, _ = writer.Write([]byte(`{"code":4,"msg":` + err.Error() + `}`))
+		return
+	}
+	config.Conf.InjectJs = string(js)
+	_, _ = writer.Write([]byte(`{"code":0,"msg":"保存成功"}`))
+	return
+
 }
