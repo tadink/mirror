@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"golang.org/x/net/html"
 	"math/rand/v2"
 	"net/http"
 	"net/url"
@@ -18,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"golang.org/x/net/html"
 )
 
 type Site struct {
@@ -123,6 +124,7 @@ func (site *Site) handleHtmlNode(node *html.Node, scheme, requestHost, requestPa
 func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomHtml string, isIndexPage bool) []byte {
 	content = site.replaceHost(content, scheme, requestHost)
 	contentStr := string(content)
+	contentStr = strings.Replace(contentStr, "</head>", `<meta name="referrer" content="no-referrer"></head>`, 1)
 	injectJs := ""
 	if scheme == "https" {
 		injectJs += `<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">`

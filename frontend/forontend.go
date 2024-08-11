@@ -8,8 +8,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/liuzl/gocc"
-	"golang.org/x/net/html"
 	"log/slog"
 	"math/rand/v2"
 	"net"
@@ -25,6 +23,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/liuzl/gocc"
+	"golang.org/x/net/html"
 )
 
 type Key uint
@@ -165,8 +166,9 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 	requestHost := response.Request.Context().Value(RequestHost).(string)
 	scheme := response.Request.Context().Value(OriginScheme).(string)
 	site := response.Request.Context().Value(SITE).(*Site)
-	if response.StatusCode == 301 || response.StatusCode == 302 {
+	if (response.StatusCode == 301 || response.StatusCode == 302) && response.Header.Get("Location") != "" {
 		return f.handleRedirectResponse(response, requestHost)
+
 	}
 
 	cacheKey := site.Domain + response.Request.URL.Path + response.Request.URL.RawQuery
@@ -193,6 +195,9 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 			isIndex := helper.IsIndexPage(requestPath)
 			buffer.Reset()
 			content, err = site.handleHtmlResponse(doc, scheme, requestHost, requestPath, randomHtml, isIndex, buffer)
+			if err != nil {
+				return err
+			}
 			helper.WrapResponseBody(response, content)
 			return nil
 		} else if strings.Contains(contentType, "css") || strings.Contains(contentType, "javascript") {
