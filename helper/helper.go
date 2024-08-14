@@ -7,16 +7,16 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"golang.org/x/net/html/charset"
 	"io"
 	"math/rand/v2"
 	"net"
 	"net/http"
 	"os"
-	"seo/mirror/config"
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"golang.org/x/net/html/charset"
 )
 
 func GetHost(request *http.Request) string {
@@ -228,28 +228,6 @@ func IsUTF8(content []byte) bool {
 	return false
 }
 
-func IsCrawler(ua string) bool {
-
-	ua = strings.ToLower(ua)
-	for _, value := range config.Conf.Spider {
-		spider := strings.ToLower(value)
-		if strings.Contains(ua, spider) {
-			return true
-		}
-	}
-	return false
-}
-func IsGoodCrawler(ua string) bool {
-	ua = strings.ToLower(ua)
-	for _, value := range config.Conf.GoodSpider {
-		spider := strings.ToLower(value)
-		if strings.Contains(ua, spider) {
-			return true
-		}
-	}
-	return false
-}
-
 func IsExist(path string) bool {
 	_, err := os.Stat(path) //os.Stat获取文件信息
 	if err != nil {
@@ -283,18 +261,4 @@ func WrapResponseBody(response *http.Response, content []byte) {
 	response.Body = readAndCloser
 	response.ContentLength = contentLength
 	response.Header.Set("Content-Length", strconv.FormatInt(contentLength, 10))
-}
-func FriendLink(domain string) string {
-	if len(config.Conf.FriendLinks[domain]) < 1 {
-		return ""
-	}
-	var friendLink string
-	for _, link := range config.Conf.FriendLinks[domain] {
-		linkItem := strings.Split(link, ",")
-		if len(linkItem) != 2 {
-			continue
-		}
-		friendLink += fmt.Sprintf("<a href='%s' target='_blank'>%s</a>", linkItem[0], linkItem[1])
-	}
-	return fmt.Sprintf("<div style='display:none'>%s</div>", friendLink)
 }

@@ -105,7 +105,7 @@ func (f *Frontend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ua := r.UserAgent()
-	if helper.IsCrawler(ua) && !helper.IsGoodCrawler(ua) { //如果是蜘蛛但不是好蜘蛛
+	if config.IsCrawler(ua) && !config.IsGoodCrawler(ua) { //如果是蜘蛛但不是好蜘蛛
 		w.WriteHeader(404)
 		_, _ = w.Write([]byte("页面未找到"))
 		return

@@ -65,6 +65,9 @@ func NewSite(siteConfig *db.SiteConfig) (*Site, error) {
 	for i, replace := range siteConfig.Replaces {
 		siteConfig.Replaces[i] = helper.HtmlEntities(replace)
 	}
+	if siteConfig.H1Replace != "" {
+		siteConfig.H1Replace = helper.HtmlEntities(siteConfig.H1Replace)
+	}
 
 	site := &Site{SiteConfig: siteConfig, targetUrl: u}
 
@@ -127,15 +130,14 @@ func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomH
 	content = site.replaceHost(content, scheme, requestHost)
 	contentStr := string(content)
 	if isIndexPage {
-		friendLink := helper.FriendLink(site.Domain)
-		contentStr = strings.Replace(contentStr, "{{friend_links}}", friendLink, 1)
-		contentStr = strings.Replace(contentStr, "{{index_title}}", site.IndexTitle, 1)
+
 		if strings.Contains(contentStr, "{{index_description}}") {
 			contentStr = strings.Replace(contentStr, "{{index_description}}", site.IndexDescription, 1)
 		} else {
 			r := fmt.Sprintf(`</title><meta name="description" content="%s">`, site.IndexDescription)
 			contentStr = strings.Replace(contentStr, "</title>", r, 1)
 		}
+
 		if strings.Contains(contentStr, "{{index_keywords}}") {
 			contentStr = strings.Replace(contentStr, "{{index_keywords}}", site.IndexKeywords, 1)
 		} else {
@@ -143,20 +145,26 @@ func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomH
 			contentStr = strings.Replace(contentStr, "</title>", r, 1)
 		}
 	}
+	h1Replace := ""
 	if !strings.Contains(contentStr, "<h1") {
-		contentStr = strings.Replace(contentStr, "{{h1_tag}}", site.H1Replace, 1)
+		h1Replace = site.H1Replace
 	}
 
-	replaceArgs := make([]string, 0, 10)
+	friendLink := config.FriendLink(site.Domain)
+
 	injectJs := ""
 	if scheme == "https" {
-		injectJs += `<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">`
+		injectJs += `<meta name="referrer" content="no-referrer">
+		<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">`
 	}
 	if config.Conf.AdDomains[site.Domain] {
 		injectJs += fmt.Sprintf(`<script type="text/javascript" src="%s"></script>`, helper.GetInjectJsPath(requestHost))
 	}
 	randomHtml = strings.ReplaceAll(randomHtml, "{{scheme}}", scheme)
-	replaceArgs = append(replaceArgs, "</head>", `<meta name="referrer" content="no-referrer"></head>`)
+	replaceArgs := make([]string, 0, 10)
+	replaceArgs = append(replaceArgs, "{{index_title}}", site.IndexTitle)
+	replaceArgs = append(replaceArgs, "{{h1_tag}}", h1Replace)
+	replaceArgs = append(replaceArgs, "{{friend_links}}", friendLink)
 	replaceArgs = append(replaceArgs, "{{inject_js}}", injectJs)
 	replaceArgs = append(replaceArgs, "{{random_html}}", randomHtml)
 	for i, replace := range site.Replaces {
@@ -164,8 +172,8 @@ func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomH
 		replaceArgs = append(replaceArgs, tag, replace)
 	}
 	contentStr = strings.NewReplacer(replaceArgs...).Replace(contentStr)
-	result := []byte(contentStr)
-	return result
+	content = []byte(contentStr)
+	return content
 }
 
 func (site *Site) transformText(text string) string {

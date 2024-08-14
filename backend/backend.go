@@ -532,7 +532,7 @@ func (b *Backend) saveBaseConfig(writer http.ResponseWriter, request *http.Reque
 			_, _ = writer.Write([]byte(`{"code":4,"msg":` + err.Error() + `}`))
 			return
 		}
-		config.Conf.Keywords = strings.Split(content, "\n")
+		config.Conf.Keywords = strings.Split(helper.HtmlEntities(content), "\n")
 		_, _ = writer.Write([]byte(`{"code":0,"msg":"保存成功"}`))
 		return
 	}
