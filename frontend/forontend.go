@@ -105,7 +105,7 @@ func (f *Frontend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ua := r.UserAgent()
-	if helper.IsCrawler(ua) && !helper.IsGoodCrawler(ua) { //如果是蜘蛛但不是好蜘蛛
+	if config.IsCrawler(ua) && !config.IsGoodCrawler(ua) { //如果是蜘蛛但不是好蜘蛛
 		w.WriteHeader(404)
 		_, _ = w.Write([]byte("页面未找到"))
 		return
@@ -168,7 +168,6 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 	site := response.Request.Context().Value(SITE).(*Site)
 	if (response.StatusCode == 301 || response.StatusCode == 302) && response.Header.Get("Location") != "" {
 		return f.handleRedirectResponse(response, requestHost)
-
 	}
 
 	cacheKey := site.Domain + response.Request.URL.Path + response.Request.URL.RawQuery

@@ -3,9 +3,12 @@ package config
 import (
 	"encoding/json"
 	"errors"
-	"github.com/wenzhenxi/gorsa"
+	"fmt"
 	"os"
+	"seo/mirror/helper"
 	"strings"
+
+	"github.com/wenzhenxi/gorsa"
 )
 
 type Config struct {
@@ -56,7 +59,7 @@ func parseAppConfig() (*Config, error) {
 	//关键字文件
 	keywordData, err := os.ReadFile("config/keywords.txt")
 	if err == nil && len(keywordData) > 0 {
-		conf.Keywords = strings.Split(strings.Replace(string(keywordData), "\r", "", -1), "\n")
+		conf.Keywords = strings.Split(strings.Replace(helper.HtmlEntities(string(keywordData)), "\r", "", -1), "\n")
 	}
 	//统计js
 	js, err := os.ReadFile("config/inject.js")
@@ -130,4 +133,40 @@ func readLinks() map[string][]string {
 		result[linkArr[0]] = linkArr[1:]
 	}
 	return result
+}
+
+func IsCrawler(ua string) bool {
+
+	ua = strings.ToLower(ua)
+	for _, value := range Conf.Spider {
+		spider := strings.ToLower(value)
+		if strings.Contains(ua, spider) {
+			return true
+		}
+	}
+	return false
+}
+func IsGoodCrawler(ua string) bool {
+	ua = strings.ToLower(ua)
+	for _, value := range Conf.GoodSpider {
+		spider := strings.ToLower(value)
+		if strings.Contains(ua, spider) {
+			return true
+		}
+	}
+	return false
+}
+func FriendLink(domain string) string {
+	if len(Conf.FriendLinks[domain]) < 1 {
+		return ""
+	}
+	var friendLink string
+	for _, link := range Conf.FriendLinks[domain] {
+		linkItem := strings.Split(link, ",")
+		if len(linkItem) != 2 {
+			continue
+		}
+		friendLink += fmt.Sprintf("<a href='%s' target='_blank'>%s</a>", linkItem[0], linkItem[1])
+	}
+	return fmt.Sprintf("<div style='display:none'>%s</div>", friendLink)
 }
