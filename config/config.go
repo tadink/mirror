@@ -160,13 +160,13 @@ func FriendLink(domain string) string {
 	if len(Conf.FriendLinks[domain]) < 1 {
 		return ""
 	}
-	var friendLink string
+	var friendLink strings.Builder
 	for _, link := range Conf.FriendLinks[domain] {
 		linkItem := strings.Split(link, ",")
 		if len(linkItem) != 2 {
 			continue
 		}
-		friendLink += fmt.Sprintf("<a href='%s' target='_blank'>%s</a>", linkItem[0], linkItem[1])
+		friendLink.WriteString(fmt.Sprintf("<a href='%s' target='_blank'>%s</a>", linkItem[0], linkItem[1]))
 	}
-	return fmt.Sprintf("<div style='display:none'>%s</div>", friendLink)
+	return fmt.Sprintf("<div style='display:none'>%s</div>", friendLink.String())
 }

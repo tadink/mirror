@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/net/html"
+	"golang.org/x/net/publicsuffix"
 )
 
 type Site struct {
@@ -53,6 +54,10 @@ func NewSite(siteConfig *db.SiteConfig) (*Site, error) {
 	u, err := url.Parse(siteConfig.Url)
 	if err != nil {
 		return nil, errors.Join(errors.New("源站url错误"), err)
+	}
+	_, err = publicsuffix.EffectiveTLDPlusOne(siteConfig.Domain)
+	if err != nil {
+		return nil, errors.Join(errors.New("域名错误"), err)
 	}
 	siteConfig.IndexTitle = helper.HtmlEntities(siteConfig.IndexTitle)
 	siteConfig.IndexKeywords = helper.HtmlEntities(siteConfig.IndexKeywords)
@@ -128,22 +133,24 @@ func (site *Site) handleHtmlNode(node *html.Node, scheme, requestHost, requestPa
 func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomHtml string, isIndexPage bool) []byte {
 	content = site.replaceHost(content, scheme, requestHost)
 	contentStr := string(content)
-	if isIndexPage {
+	var injectJs strings.Builder
+	injectJs.WriteString(`<meta name="referrer" content="no-referrer">`)
 
-		if strings.Contains(contentStr, "{{index_description}}") {
-			contentStr = strings.Replace(contentStr, "{{index_description}}", site.IndexDescription, 1)
-		} else {
-			r := fmt.Sprintf(`</title><meta name="description" content="%s">`, site.IndexDescription)
-			contentStr = strings.Replace(contentStr, "</title>", r, 1)
-		}
-
-		if strings.Contains(contentStr, "{{index_keywords}}") {
-			contentStr = strings.Replace(contentStr, "{{index_keywords}}", site.IndexKeywords, 1)
-		} else {
-			r := fmt.Sprintf(`</title><meta name="keywords" content="%s">`, site.IndexKeywords)
-			contentStr = strings.Replace(contentStr, "</title>", r, 1)
-		}
+	if isIndexPage && !strings.Contains(contentStr, "{{index_keywords}}") {
+		r := fmt.Sprintf(`<meta name="keywords" content="%s">`, site.IndexKeywords)
+		injectJs.WriteString(r)
 	}
+	if isIndexPage && !strings.Contains(contentStr, "{{index_description}}") {
+		r := fmt.Sprintf(`<meta name="description" content="%s">`, site.IndexDescription)
+		injectJs.WriteString(r)
+	}
+	if scheme == "https" {
+		injectJs.WriteString(`<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">`)
+	}
+	if config.Conf.AdDomains[site.Domain] {
+		injectJs.WriteString(fmt.Sprintf(`<script type="text/javascript" src="%s"></script>`, helper.GetInjectJsPath(requestHost)))
+	}
+
 	h1Replace := ""
 	if !strings.Contains(contentStr, "<h1") {
 		h1Replace = site.H1Replace
@@ -151,21 +158,16 @@ func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomH
 
 	friendLink := config.FriendLink(site.Domain)
 
-	injectJs := ""
-	if scheme == "https" {
-		injectJs += `<meta name="referrer" content="no-referrer">
-		<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">`
-	}
-	if config.Conf.AdDomains[site.Domain] {
-		injectJs += fmt.Sprintf(`<script type="text/javascript" src="%s"></script>`, helper.GetInjectJsPath(requestHost))
-	}
 	randomHtml = strings.ReplaceAll(randomHtml, "{{scheme}}", scheme)
-	replaceArgs := make([]string, 0, 10)
+
+	replaceArgs := make([]string, 0, 20)
 	replaceArgs = append(replaceArgs, "{{index_title}}", site.IndexTitle)
+	replaceArgs = append(replaceArgs, "{{index_keywords}}", site.IndexKeywords)
+	replaceArgs = append(replaceArgs, "{{index_description}}", site.IndexDescription)
+	replaceArgs = append(replaceArgs, "{{inject_js}}", injectJs.String())
+	replaceArgs = append(replaceArgs, "{{random_html}}", randomHtml)
 	replaceArgs = append(replaceArgs, "{{h1_tag}}", h1Replace)
 	replaceArgs = append(replaceArgs, "{{friend_links}}", friendLink)
-	replaceArgs = append(replaceArgs, "{{inject_js}}", injectJs)
-	replaceArgs = append(replaceArgs, "{{random_html}}", randomHtml)
 	for i, replace := range site.Replaces {
 		tag := fmt.Sprintf("{{replace:%d}}", i)
 		replaceArgs = append(replaceArgs, tag, replace)
@@ -225,11 +227,9 @@ func (site *Site) transformNodeAttr(node *html.Node) {
 	if slices.Contains(needIdAttrTags, node.Data) && !hasId {
 		sum := md5.Sum(attrString.Bytes())
 		h := hex.EncodeToString(sum[:])
-		id := ""
+		id := h[:6]
 		if len(site.Domain) > 16 {
 			id = h[:8]
-		} else {
-			id = h[:6]
 		}
 		node.Attr = append(node.Attr, html.Attribute{Key: "id", Val: id})
 	}
@@ -364,6 +364,11 @@ func (site *Site) transformMetaNode(node *html.Node, isIndexPage bool) {
 		if strings.EqualFold(attr.Key, "http-equiv") && strings.EqualFold(attr.Val, "Content-Security-Policy") {
 			content = "*"
 			break
+		}
+		if strings.EqualFold(attr.Key, "name") && strings.EqualFold(attr.Val, "referrer") {
+			node.Parent.RemoveChild(node)
+			break
+
 		}
 		if strings.EqualFold(attr.Key, "charset") {
 			node.Attr[i].Val = "UTF-8"

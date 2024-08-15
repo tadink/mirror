@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/net/html/charset"
+	"golang.org/x/net/publicsuffix"
 )
 
 func GetHost(request *http.Request) string {
@@ -116,16 +117,18 @@ func Intersection(a []string, b []net.IP) bool {
 
 func RandHtml(domain string) string {
 	htmlTags := []string{"abbr", "address", "area", "article", "aside", "b", "base", "bdo", "blockquote", "button", "cite", "code", "dd", "del", "details", "dfn", "dl", "dt", "em", "figure", "font", "i", "ins", "kbd", "label", "legend", "li", "mark", "meter", "ol", "option", "p", "q", "progress", "rt", "ruby", "samp", "section", "select", "small", "strong", "tt", "u"}
-	var result string
+	var result strings.Builder
+	domain, _ = publicsuffix.EffectiveTLDPlusOne(domain)
 	for i := 0; i < 100; i++ {
-		if domainParts := strings.Split(domain, "."); ((IsDoubleSuffixDomain(domain) && len(domainParts) == 3) || len(domainParts) == 2) && rand.IntN(100) < 20 {
-			result = result + fmt.Sprintf(`<a href="%s" target="_blank">%s</a>`, "{{scheme}}://"+RandStr(3, 5)+"."+domain, RandStr(6, 16))
+		if rand.IntN(100) < 20 {
+			result.WriteString(fmt.Sprintf(`<a href="%s" target="_blank">%s</a>`, "{{scheme}}://"+RandStr(3, 5)+"."+domain, RandStr(6, 16)))
 			continue
 		}
 		t := htmlTags[rand.IntN(len(htmlTags))]
-		result = result + fmt.Sprintf(`<%s id="%s" class="%s">%s</%s>`, t, RandStr(4, 8), RandStr(4, 8), RandStr(6, 16), t)
+		result.WriteString(fmt.Sprintf(`<%s id="%s" class="%s">%s</%s>`, t, RandStr(4, 8), RandStr(4, 8), RandStr(6, 16), t))
+
 	}
-	return "<div style=\"display:none\">" + result + "</div>"
+	return "<div style=\"display:none\">" + result.String() + "</div>"
 }
 func RandStr(minLength int, maxLength int) string {
 	chars := []rune("ABCDEFGHIJKLNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
@@ -188,13 +191,8 @@ func HtmlEntities(input string) string {
 }
 
 func IsDoubleSuffixDomain(host string) bool {
-	suffixes := []string{"com.cn", "net.cn", "org.cn"}
-	for _, suffix := range suffixes {
-		if strings.Contains(host, suffix) {
-			return true
-		}
-	}
-	return false
+	suffix, _ := publicsuffix.PublicSuffix(host)
+	return strings.Contains(suffix, ".")
 }
 func Escape(content string) string {
 	content = strings.ReplaceAll(content, "&", "&amp;")
