@@ -91,7 +91,7 @@ func (site *Site) handleHtmlResponse(document *html.Node, scheme, requestHost, r
 func (site *Site) handleHtmlNode(node *html.Node, scheme, requestHost, requestPath string, isIndexPage bool) {
 	switch node.Type {
 	case html.CommentNode:
-		node.Parent.RemoveChild(node)
+		node.Data = ""
 	case html.TextNode, html.RawNode:
 		if node.Parent == nil || node.Parent.Data != "title" {
 			node.Data = site.transformText(node.Data)
@@ -366,7 +366,7 @@ func (site *Site) transformMetaNode(node *html.Node, isIndexPage bool) {
 			break
 		}
 		if strings.EqualFold(attr.Key, "name") && strings.EqualFold(attr.Val, "referrer") {
-			node.Parent.RemoveChild(node)
+			content = "no-referrer"
 			break
 
 		}

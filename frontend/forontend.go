@@ -180,13 +180,17 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 		content := buffer.Bytes()
 		contentType := strings.ToLower(response.Header.Get("Content-Type"))
 		if strings.Contains(contentType, "text/html") {
+			content = bytes.ReplaceAll(content, []byte("\u200B"), []byte(""))
+			content = bytes.ReplaceAll(content, []byte("\uFEFF"), []byte(""))
+			content = bytes.ReplaceAll(content, []byte("\u200D"), []byte(""))
+			content = bytes.ReplaceAll(content, []byte("\u200C"), []byte(""))
 			content = helper.GBK2UTF8(content, contentType)
 			randomHtml := helper.RandHtml(site.Domain)
 			err = f.setCache(cacheKey, site.Domain, response.StatusCode, response.Header, content, randomHtml)
 			if err != nil {
 				return err
 			}
-			doc, err := html.Parse(buffer)
+			doc, err := html.Parse(bytes.NewReader(content))
 			if err != nil {
 				return err
 			}

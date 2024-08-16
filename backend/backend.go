@@ -106,11 +106,11 @@ func (b *Backend) login(writer http.ResponseWriter, request *http.Request) {
 	err := json.NewDecoder(request.Body).Decode(&user)
 	if err != nil {
 		slog.Error("login ParseForm error:" + err.Error())
-		_, _ = writer.Write([]byte(`{"code":5,"msg":"参数错误"}`))
+		_, err = writer.Write([]byte(`{"code":5,"msg":"参数错误"}`))
 		return
 	}
 	if user.UserName == "" || user.Password == "" || b.UserName != user.UserName || b.Password != user.Password {
-		_, _ = writer.Write([]byte(`{"code":4,"msg":"用户名或密码错误"}`))
+		_, err = writer.Write([]byte(`{"code":4,"msg":"用户名或密码错误"}`))
 		return
 	}
 	sum := sha256.New().Sum([]byte(user.UserName + user.Password))
@@ -214,19 +214,15 @@ func (b *Backend) forbiddenWords(writer http.ResponseWriter, request *http.Reque
 }
 
 func (b *Backend) editSite(writer http.ResponseWriter, request *http.Request) {
+	//v := request.URL.Query().Get("url")
 	s := request.URL.Query().Get("url")
 	t := template.New("edit.html")
 	t.Funcs(template.FuncMap{"join": strings.Join})
 	t = template.Must(t.ParseFiles("admin/edit.html"))
 	var siteConfig db.SiteConfig
 	var err error
-
 	if s != "" {
-		siteConfig, err = db.GetOne(s)
-		if err != nil {
-			_ = t.Execute(writer, map[string]string{"error": err.Error()})
-			return
-		}
+		siteConfig, _ = db.GetOne(s)
 	}
 	err = t.Execute(writer, map[string]interface{}{"proxy_config": siteConfig, "admin_uri": b.prefix})
 	if err != nil {
