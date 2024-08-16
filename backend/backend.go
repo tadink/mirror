@@ -106,11 +106,11 @@ func (b *Backend) login(writer http.ResponseWriter, request *http.Request) {
 	err := json.NewDecoder(request.Body).Decode(&user)
 	if err != nil {
 		slog.Error("login ParseForm error:" + err.Error())
-		_, err = writer.Write([]byte(`{"code":5,"msg":"参数错误"}`))
+		_, _ = writer.Write([]byte(`{"code":5,"msg":"参数错误"}`))
 		return
 	}
 	if user.UserName == "" || user.Password == "" || b.UserName != user.UserName || b.Password != user.Password {
-		_, err = writer.Write([]byte(`{"code":4,"msg":"用户名或密码错误"}`))
+		_, _ = writer.Write([]byte(`{"code":4,"msg":"用户名或密码错误"}`))
 		return
 	}
 	sum := sha256.New().Sum([]byte(user.UserName + user.Password))
@@ -214,13 +214,13 @@ func (b *Backend) forbiddenWords(writer http.ResponseWriter, request *http.Reque
 }
 
 func (b *Backend) editSite(writer http.ResponseWriter, request *http.Request) {
-	v := request.URL.Query()
-	s := v.Get("url")
+	s := request.URL.Query().Get("url")
 	t := template.New("edit.html")
 	t.Funcs(template.FuncMap{"join": strings.Join})
 	t = template.Must(t.ParseFiles("admin/edit.html"))
-	siteConfig := db.SiteConfig{}
+	var siteConfig db.SiteConfig
 	var err error
+
 	if s != "" {
 		siteConfig, err = db.GetOne(s)
 		if err != nil {
@@ -311,7 +311,7 @@ func (b *Backend) siteSave(writer http.ResponseWriter, request *http.Request) {
 	u := request.Form.Get("url")
 	cacheTime, err := strconv.ParseInt(request.Form.Get("cache_time"), 10, 64)
 	if err != nil || cacheTime == 0 {
-		cacheTime = 1440
+		cacheTime = 88888888
 	}
 	i, err := strconv.Atoi(id)
 	if err != nil {
@@ -362,10 +362,10 @@ func (b *Backend) siteSave(writer http.ResponseWriter, request *http.Request) {
 	b.frontend.Sites.Store(site.Domain, site)
 
 	if siteConfig.Id == 0 {
-		_, _ = writer.Write([]byte("{\"code\":0,\"action\":\"add\"}"))
+		_, _ = writer.Write([]byte(`{"code":0,"action":"add"}`))
 		return
 	}
-	_, _ = writer.Write([]byte("{\"code\":0}"))
+	_, _ = writer.Write([]byte(`{"code":0}`))
 
 }
 
@@ -389,7 +389,7 @@ func (b *Backend) siteDelete(writer http.ResponseWriter, request *http.Request) 
 	}
 	b.frontend.Sites.Delete(domain)
 	_ = b.deleteCache(domain)
-	_, _ = writer.Write([]byte("{\"code\":0}"))
+	_, _ = writer.Write([]byte(`{"code":0}`))
 
 }
 
@@ -469,7 +469,7 @@ func (b *Backend) siteImport(writer http.ResponseWriter, request *http.Request) 
 		}
 		b.frontend.Sites.Store(site.Domain, site)
 	}
-	_, _ = writer.Write([]byte("{\"code\":0}"))
+	_, _ = writer.Write([]byte(`{"code":0}`))
 }
 
 func (b *Backend) baseConfig(writer http.ResponseWriter, request *http.Request) {
@@ -639,6 +639,5 @@ func (b *Backend) saveInjectJs(writer http.ResponseWriter, request *http.Request
 	}
 	config.Conf.InjectJs = string(js)
 	_, _ = writer.Write([]byte(`{"code":0,"msg":"保存成功"}`))
-	return
 
 }

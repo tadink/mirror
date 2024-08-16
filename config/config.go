@@ -136,7 +136,6 @@ func readLinks() map[string][]string {
 }
 
 func IsCrawler(ua string) bool {
-
 	ua = strings.ToLower(ua)
 	for _, value := range Conf.Spider {
 		spider := strings.ToLower(value)
