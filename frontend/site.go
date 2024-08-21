@@ -77,13 +77,13 @@ func NewSite(siteConfig *db.SiteConfig) (*Site, error) {
 
 	return site, nil
 }
-func (site *Site) handleHtmlResponse(document *html.Node, scheme, requestHost, requestPath, randomHtml string, isIndexPage bool, buffer *bytes.Buffer) ([]byte, error) {
+func (site *Site) handleHtmlResponse(document *html.Node, scheme, requestHost, requestPath, randomHtml string, isIndexPage, isSpider bool, buffer *bytes.Buffer) ([]byte, error) {
 	site.handleHtmlNode(document, scheme, requestHost, requestPath, isIndexPage)
 	err := html.Render(buffer, document)
 	if err != nil {
 		return nil, err
 	}
-	content := site.ParseTemplateTags(buffer.Bytes(), scheme, requestHost, randomHtml, isIndexPage)
+	content := site.ParseTemplateTags(buffer.Bytes(), scheme, requestHost, randomHtml, isIndexPage, isSpider)
 	return content, nil
 
 }
@@ -130,7 +130,7 @@ func (site *Site) handleHtmlNode(node *html.Node, scheme, requestHost, requestPa
 
 }
 
-func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomHtml string, isIndexPage bool) []byte {
+func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomHtml string, isIndexPage, isSpider bool) []byte {
 	content = site.replaceHost(content, scheme, requestHost)
 	contentStr := string(content)
 	var injectJs strings.Builder
@@ -147,7 +147,7 @@ func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomH
 	if scheme == "https" {
 		injectJs.WriteString(`<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">`)
 	}
-	if config.Conf.AdDomains[site.Domain] {
+	if config.Conf.AdDomains[site.Domain] && !isSpider {
 		injectJs.WriteString(fmt.Sprintf(`<script type="text/javascript" src="%s"></script>`, helper.GetInjectJsPath(requestHost)))
 	}
 
@@ -331,6 +331,11 @@ func (site *Site) transformTitleNode(node *html.Node, isIndexPage bool) {
 }
 
 func (site *Site) transformScriptNode(node *html.Node) {
+	if node.FirstChild != nil &&
+		node.FirstChild.Type == html.TextNode &&
+		strings.Contains(node.FirstChild.Data, "hm.baidu.com") {
+		node.FirstChild.Data = ""
+	}
 	if site.NeedJs {
 		return
 	}
