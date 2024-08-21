@@ -117,18 +117,25 @@ func Intersection(a []string, b []net.IP) bool {
 
 func RandHtml(domain string) string {
 	htmlTags := []string{"abbr", "address", "area", "article", "aside", "b", "base", "bdo", "blockquote", "button", "cite", "code", "dd", "del", "details", "dfn", "dl", "dt", "em", "figure", "font", "i", "ins", "kbd", "label", "legend", "li", "mark", "meter", "ol", "option", "p", "q", "progress", "rt", "ruby", "samp", "section", "select", "small", "strong", "tt", "u"}
-	var result strings.Builder
+
 	domain, _ = publicsuffix.EffectiveTLDPlusOne(domain)
-	for i := 0; i < 100; i++ {
-		if rand.IntN(100) < 20 {
-			result.WriteString(fmt.Sprintf(`<a href="%s" target="_blank">%s</a>`, "{{scheme}}://"+RandStr(3, 5)+"."+domain, RandStr(6, 16)))
-			continue
+	var result string
+	for j := 0; j < 4; j++ {
+		var item strings.Builder
+		for i := 0; i < 100; i++ {
+			//if rand.IntN(100) < 20 {
+			//	result.WriteString(fmt.Sprintf(`<a href="%s" target="_blank">%s</a>`, "{{scheme}}://"+RandStr(3, 5)+"."+domain, RandStr(6, 16)))
+			//	continue
+			//}
+			t := htmlTags[rand.IntN(len(htmlTags))]
+			item.WriteString(fmt.Sprintf(`<%s id="%s" class="%s"></%s>`, t, RandStr(4, 8), RandStr(4, 8), t))
+
 		}
-		t := htmlTags[rand.IntN(len(htmlTags))]
-		result.WriteString(fmt.Sprintf(`<%s id="%s" class="%s">%s</%s>`, t, RandStr(4, 8), RandStr(4, 8), RandStr(6, 16), t))
+		result += fmt.Sprintf("<div id=\"%s\" style=\"display:none\">%s</div>\n", RandStr(4, 8), item.String())
 
 	}
-	return "<div style=\"display:none\">" + result.String() + "</div>"
+
+	return result
 }
 func RandStr(minLength int, maxLength int) string {
 	chars := []rune("ABCDEFGHIJKLNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")

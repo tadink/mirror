@@ -246,9 +246,9 @@ func (f *Frontend) handleRedirectResponse(response *http.Response, host string) 
 }
 
 func (f *Frontend) Auth() error {
-	if !helper.Intersection(config.Conf.AuthInfo.IPList, f.IpList) {
-		return errors.New("IP地址不正确")
-	}
+	//if !helper.Intersection(config.Conf.AuthInfo.IPList, f.IpList) {
+	//	return errors.New("IP地址不正确")
+	//}
 	if config.Conf.AuthInfo == nil {
 		return errors.New("已到期，请重新续期")
 	}
