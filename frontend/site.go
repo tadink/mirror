@@ -151,8 +151,8 @@ func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomH
 	}
 
 	h1Replace := ""
-	if !strings.Contains(contentStr, "<h1") {
-		h1Replace = site.H1Replace
+	if !strings.Contains(contentStr, "<h1") && site.H1Replace != "" {
+		h1Replace = fmt.Sprintf(`<h1 style="display:none" class="%s"><a href="%s">%s</a></h1>`, helper.RandStr(4, 8), scheme+"://"+requestHost, site.H1Replace)
 	}
 	if len(config.Conf.Keywords) > 0 {
 		keywordTag := keywordRegexp.FindStringSubmatch(contentStr)
