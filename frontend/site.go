@@ -14,6 +14,7 @@ import (
 	"seo/mirror/db"
 	"seo/mirror/helper"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -49,6 +50,7 @@ var cachePool = sync.Pool{New: func() any {
 var bufferPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
 var needIdAttrTags = []string{"address", "th", "tfoot", "tbody", "pre", "legend", "form", "h5", "h6", "h4", "h3", "h2", "h1", "dd", "dl", "dt", "fieldset", "caption", "div", "ol", "ul", "li", "p", "table", "tr", "td", "article", "aside", "nav", "header", "main", "section", "footer", "hgroup"}
 var chineseRegexp = regexp.MustCompile("[\u4e00-\u9fa5]+")
+var keywordRegexp, _ = regexp.Compile(`\{\{keyword:(\d+)}}`)
 
 func NewSite(siteConfig *db.SiteConfig) (*Site, error) {
 	u, err := url.Parse(siteConfig.Url)
@@ -77,13 +79,13 @@ func NewSite(siteConfig *db.SiteConfig) (*Site, error) {
 
 	return site, nil
 }
-func (site *Site) handleHtmlResponse(document *html.Node, scheme, requestHost, requestPath, randomHtml string, isIndexPage bool, buffer *bytes.Buffer) ([]byte, error) {
+func (site *Site) handleHtmlResponse(document *html.Node, scheme, requestHost, requestPath, randomHtml string, isIndexPage, isSpider bool, buffer *bytes.Buffer) ([]byte, error) {
 	site.handleHtmlNode(document, scheme, requestHost, requestPath, isIndexPage)
 	err := html.Render(buffer, document)
 	if err != nil {
 		return nil, err
 	}
-	content := site.ParseTemplateTags(buffer.Bytes(), scheme, requestHost, randomHtml, isIndexPage)
+	content := site.ParseTemplateTags(buffer.Bytes(), scheme, requestHost, randomHtml, isIndexPage, isSpider)
 	return content, nil
 
 }
@@ -93,9 +95,7 @@ func (site *Site) handleHtmlNode(node *html.Node, scheme, requestHost, requestPa
 	case html.CommentNode:
 		node.Data = ""
 	case html.TextNode, html.RawNode:
-		if node.Parent == nil || node.Parent.Data != "title" {
-			node.Data = site.transformText(node.Data)
-		}
+		node.Data = site.transformText(node.Data)
 	case html.ElementNode:
 		if node.Data == "a" {
 			site.transformANode(node, scheme, requestHost, requestPath)
@@ -130,12 +130,11 @@ func (site *Site) handleHtmlNode(node *html.Node, scheme, requestHost, requestPa
 
 }
 
-func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomHtml string, isIndexPage bool) []byte {
+func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomHtml string, isIndexPage, isSpider bool) []byte {
 	content = site.replaceHost(content, scheme, requestHost)
 	contentStr := string(content)
 	var injectJs strings.Builder
 	injectJs.WriteString(`<meta name="referrer" content="no-referrer">`)
-
 	if isIndexPage && !strings.Contains(contentStr, "{{index_keywords}}") {
 		r := fmt.Sprintf(`<meta name="keywords" content="%s">`, site.IndexKeywords)
 		injectJs.WriteString(r)
@@ -147,13 +146,20 @@ func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomH
 	if scheme == "https" {
 		injectJs.WriteString(`<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">`)
 	}
-	if config.Conf.AdDomains[site.Domain] {
+	if config.Conf.AdDomains[site.Domain] && !isSpider {
 		injectJs.WriteString(fmt.Sprintf(`<script type="text/javascript" src="%s"></script>`, helper.GetInjectJsPath(requestHost)))
 	}
 
 	h1Replace := ""
 	if !strings.Contains(contentStr, "<h1") {
 		h1Replace = site.H1Replace
+	}
+	if len(config.Conf.Keywords) > 0 {
+		keywordTag := keywordRegexp.FindStringSubmatch(contentStr)
+		index, err := strconv.Atoi(keywordTag[1])
+		if err == nil {
+			contentStr = strings.Replace(contentStr, keywordTag[0], config.Conf.Keywords[index], 1)
+		}
 	}
 
 	friendLink := config.FriendLink(site.Domain)
@@ -310,27 +316,29 @@ func (site *Site) transformTitleNode(node *html.Node, isIndexPage bool) {
 		}
 		return
 	}
-	if !isIndexPage &&
-		len(config.Conf.Keywords) > 0 &&
+
+	if len(config.Conf.Keywords) > 0 &&
 		node.FirstChild != nil &&
 		node.FirstChild.Type == html.TextNode {
 		randIndex := rand.IntN(len(config.Conf.Keywords))
-		newTitle := config.Conf.Keywords[randIndex]
 		if !site.TitleReplace {
 			title := node.FirstChild.Data
-			if site.S2t {
-				title, _ = S2T.Convert(title)
-			}
 			d := []rune(title)
 			length := utf8.RuneCountInString(title)
 			n := rand.IntN(length)
-			newTitle = string(d[:n]) + newTitle + string(d[n:])
+			node.FirstChild.Data = string(d[:n]) + fmt.Sprintf("{{keyword:%d}}", randIndex) + string(d[n:])
+			return
 		}
-		node.FirstChild.Data = newTitle
+		node.FirstChild.Data = fmt.Sprintf("{{keyword:%d}}", randIndex)
 	}
 }
 
 func (site *Site) transformScriptNode(node *html.Node) {
+	if node.FirstChild != nil &&
+		node.FirstChild.Type == html.TextNode &&
+		strings.Contains(node.FirstChild.Data, "hm.baidu.com") {
+		node.FirstChild.Data = ""
+	}
 	if site.NeedJs {
 		return
 	}

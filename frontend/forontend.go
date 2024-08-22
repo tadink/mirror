@@ -195,9 +195,11 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 				return err
 			}
 			requestPath := response.Request.URL.Path
+			originUserAgent := response.Request.Context().Value(OriginUA).(string)
+			isSpider := config.IsCrawler(originUserAgent)
 			isIndex := helper.IsIndexPage(requestPath)
 			buffer.Reset()
-			content, err = site.handleHtmlResponse(doc, scheme, requestHost, requestPath, randomHtml, isIndex, buffer)
+			content, err = site.handleHtmlResponse(doc, scheme, requestHost, requestPath, randomHtml, isIndex, isSpider, buffer)
 			if err != nil {
 				return err
 			}
@@ -270,9 +272,11 @@ func (f *Frontend) handleCacheResponse(cacheResponse *CacheResponse, site *Site,
 	buffer := request.Context().Value(BUFFER).(*bytes.Buffer)
 	var content = cacheResponse.Body
 	if strings.Contains(contentType, "text/html") {
+		originUserAgent := request.Context().Value(OriginUA).(string)
+		isSpider := config.IsCrawler(originUserAgent)
 		isIndexPage := helper.IsIndexPage(requestPath)
 		doc, _ := html.Parse(bytes.NewReader(content))
-		content, _ = site.handleHtmlResponse(doc, scheme, requestHost, requestPath, cacheResponse.RandomHtml, isIndexPage, buffer)
+		content, _ = site.handleHtmlResponse(doc, scheme, requestHost, requestPath, cacheResponse.RandomHtml, isIndexPage, isSpider, buffer)
 	} else if strings.Contains(contentType, "css") || strings.Contains(contentType, "javascript") {
 		for index, find := range site.Finds {
 			content = bytes.ReplaceAll(content, []byte(find), []byte(site.Replaces[index]))
