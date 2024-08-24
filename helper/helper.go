@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"golang.org/x/net/html/charset"
 	"io"
 	"math/rand/v2"
 	"net"
@@ -16,7 +17,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"golang.org/x/net/html/charset"
 	"golang.org/x/net/publicsuffix"
 )
 
@@ -43,29 +43,30 @@ func GetInjectJsPath(host string) string {
 
 }
 
-func IsIndexPage(path string) bool {
+func IsIndexPage(path, query string) bool {
 	return path == "" ||
 		strings.EqualFold(path, "/") ||
-		strings.EqualFold(path, "/index.php") ||
-		strings.EqualFold(path, "/index.asp") ||
-		strings.EqualFold(path, "/index.jsp") ||
+		(strings.EqualFold(path, "/index.php") && query == "") ||
+		(strings.EqualFold(path, "/index.asp") && query == "") ||
+		(strings.EqualFold(path, "/index.jsp") && query == "") ||
 		strings.EqualFold(path, "/index.htm") ||
 		strings.EqualFold(path, "/index.html") ||
 		strings.EqualFold(path, "/index.shtml")
 
 }
-func GBK2UTF8(content []byte, contentType string) []byte {
+func GBK2UTF8(content []byte, contentType string) ([]byte, error) {
 	temp := content
 	if len(content) > 1024 {
 		temp = content[:1024]
 	}
-	if !IsUTF8(temp) {
-		e, name, _ := charset.DetermineEncoding(content, contentType)
-		if !strings.EqualFold(name, "utf-8") {
-			content, _ = e.NewDecoder().Bytes(content)
-		}
+	if IsUTF8(temp) {
+		return content, nil
 	}
-	return content
+	e, name, _ := charset.DetermineEncoding(content, contentType)
+	if !strings.EqualFold(name, "utf-8") {
+		return e.NewDecoder().Bytes(content)
+	}
+	return content, nil
 }
 
 func GetIPList() ([]net.IP, error) {
@@ -237,7 +238,7 @@ func IsExist(path string) bool {
 
 func ReadResponse(response *http.Response, buffer *bytes.Buffer) error {
 	contentEncoding := response.Header.Get("Content-Encoding")
-	defer response.Body.Close()
+
 	if contentEncoding == "gzip" {
 		reader, gzipErr := gzip.NewReader(response.Body)
 		if gzipErr != nil {
@@ -250,7 +251,10 @@ func ReadResponse(response *http.Response, buffer *bytes.Buffer) error {
 		return nil
 	}
 	_, err := io.Copy(buffer, response.Body)
-	return err
+	if err != nil {
+		return err
+	}
+	return response.Body.Close()
 }
 
 func WrapResponseBody(response *http.Response, content []byte) {
