@@ -119,7 +119,7 @@ func (site *Site) handleHtmlNode(node *html.Node, scheme, requestHost, requestPa
 			site.transformHeadNode(node)
 		}
 		if node.Data == "h1" && node.FirstChild != nil && node.FirstChild.Type == html.TextNode && site.H1Replace != "" {
-			node.FirstChild.Data = site.H1Replace
+			node.FirstChild.Data = "{{h1_replace}}"
 		}
 		site.transformNodeAttr(node)
 	default:
@@ -173,6 +173,7 @@ func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomH
 	replaceArgs = append(replaceArgs, "{{inject_js}}", injectJs.String())
 	replaceArgs = append(replaceArgs, "{{random_html}}", randomHtml)
 	replaceArgs = append(replaceArgs, "{{h1_tag}}", h1Replace)
+	replaceArgs = append(replaceArgs, "{{h1_replace}}", site.H1Replace)
 	replaceArgs = append(replaceArgs, "{{friend_links}}", friendLink)
 	for i, replace := range site.Replaces {
 		tag := fmt.Sprintf("{{replace:%d}}", i)
