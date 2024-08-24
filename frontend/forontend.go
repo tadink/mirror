@@ -121,10 +121,7 @@ func (f *Frontend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx = context.WithValue(ctx, BUFFER, buffer)
 	r = r.WithContext(ctx)
 	f.Route(w, r)
-	if cap(buffer.Bytes()) < 1<<20 {
-		bufferPool.Put(buffer)
-	}
-
+	bufferPool.Put(buffer)
 }
 
 func (f *Frontend) Route(writer http.ResponseWriter, request *http.Request) {
@@ -248,9 +245,9 @@ func (f *Frontend) handleRedirectResponse(response *http.Response, host string) 
 }
 
 func (f *Frontend) Auth() error {
-	if !helper.Intersection(config.Conf.AuthInfo.IPList, f.IpList) {
-		return errors.New("IP地址不正确")
-	}
+	//if !helper.Intersection(config.Conf.AuthInfo.IPList, f.IpList) {
+	//	return errors.New("IP地址不正确")
+	//}
 	if config.Conf.AuthInfo == nil {
 		return errors.New("已到期，请重新续期")
 	}
@@ -275,14 +272,19 @@ func (f *Frontend) handleCacheResponse(cacheResponse *CacheResponse, site *Site,
 		originUserAgent := request.Context().Value(OriginUA).(string)
 		isSpider := config.IsCrawler(originUserAgent)
 		isIndexPage := helper.IsIndexPage(requestPath)
-		doc, _ := html.Parse(bytes.NewReader(content))
-		content, _ = site.handleHtmlResponse(doc, scheme, requestHost, requestPath, cacheResponse.RandomHtml, isIndexPage, isSpider, buffer)
+		doc, err := html.Parse(bytes.NewReader(content))
+		if err != nil {
+			slog.Error("html parse", "message", err.Error())
+		}
+		content, err = site.handleHtmlResponse(doc, scheme, requestHost, requestPath, cacheResponse.RandomHtml, isIndexPage, isSpider, buffer)
+		if err != nil {
+			slog.Error("handleHtmlResponse", "message", err.Error())
+		}
 	} else if strings.Contains(contentType, "css") || strings.Contains(contentType, "javascript") {
 		for index, find := range site.Finds {
 			content = bytes.ReplaceAll(content, []byte(find), []byte(site.Replaces[index]))
 		}
-		contentStr := site.replaceHost(content, scheme, requestHost)
-		content = []byte(contentStr)
+		content = site.replaceHost(content, scheme, requestHost)
 	}
 
 	for key, values := range cacheResponse.Header {
