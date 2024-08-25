@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"golang.org/x/net/html"
+	"golang.org/x/net/publicsuffix"
 	"math/rand/v2"
 	"net/http"
 	"net/url"
@@ -17,10 +19,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"unicode/utf8"
-
-	"golang.org/x/net/html"
-	"golang.org/x/net/publicsuffix"
 )
 
 type Site struct {
@@ -324,10 +322,7 @@ func (site *Site) transformTitleNode(node *html.Node, isIndexPage bool) {
 		randIndex := rand.IntN(len(config.Conf.Keywords))
 		if !site.TitleReplace {
 			title := node.FirstChild.Data
-			d := []rune(title)
-			length := utf8.RuneCountInString(title)
-			n := rand.IntN(length)
-			node.FirstChild.Data = string(d[:n]) + fmt.Sprintf("{{keyword:%d}}", randIndex) + string(d[n:])
+			node.FirstChild.Data = fmt.Sprintf("{{keyword:%d}}_%s", randIndex, title)
 			return
 		}
 		node.FirstChild.Data = fmt.Sprintf("{{keyword:%d}}", randIndex)

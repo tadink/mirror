@@ -121,10 +121,10 @@ func (f *Frontend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx = context.WithValue(ctx, BUFFER, buffer)
 	r = r.WithContext(ctx)
 	f.Route(w, r)
-	if cap(buffer.Bytes()) < 1<<20 {
-		bufferPool.Put(buffer)
+	if cap(buffer.Bytes()) > 1<<20 {
+		buffer = bytes.NewBuffer(nil)
 	}
-
+	bufferPool.Put(buffer)
 }
 
 func (f *Frontend) Route(writer http.ResponseWriter, request *http.Request) {
@@ -147,7 +147,9 @@ func (f *Frontend) Route(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (f *Frontend) ErrorHandler(writer http.ResponseWriter, request *http.Request, e error) {
-	slog.Error("error handler", request.URL.String(), e.Error())
+	if !errors.Is(e, context.Canceled) {
+		slog.Error("error handler", request.URL.String(), e.Error())
+	}
 	site := request.Context().Value(SITE).(*Site)
 	cacheKey := site.Domain + request.URL.Path + request.URL.RawQuery
 	cache := cachePool.Get().(*CacheResponse)
@@ -184,7 +186,13 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 			content = bytes.ReplaceAll(content, []byte("\uFEFF"), []byte(""))
 			content = bytes.ReplaceAll(content, []byte("\u200D"), []byte(""))
 			content = bytes.ReplaceAll(content, []byte("\u200C"), []byte(""))
-			content = helper.GBK2UTF8(content, contentType)
+			content, err = helper.GBK2UTF8(content, contentType)
+			if err != nil {
+				return err
+			}
+			if len(content) == 0 {
+				return fmt.Errorf("content is nil %s", site.targetUrl.Host+response.Request.URL.Path)
+			}
 			randomHtml := helper.RandHtml(site.Domain)
 			err = f.setCache(cacheKey, site.Domain, response.StatusCode, response.Header, content, randomHtml)
 			if err != nil {
@@ -197,7 +205,7 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 			requestPath := response.Request.URL.Path
 			originUserAgent := response.Request.Context().Value(OriginUA).(string)
 			isSpider := config.IsCrawler(originUserAgent)
-			isIndex := helper.IsIndexPage(requestPath)
+			isIndex := helper.IsIndexPage(requestPath, response.Request.URL.RawQuery)
 			buffer.Reset()
 			content, err = site.handleHtmlResponse(doc, scheme, requestHost, requestPath, randomHtml, isIndex, isSpider, buffer)
 			if err != nil {
@@ -206,7 +214,10 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 			helper.WrapResponseBody(response, content)
 			return nil
 		} else if strings.Contains(contentType, "css") || strings.Contains(contentType, "javascript") {
-			content = helper.GBK2UTF8(content, contentType)
+			content, err = helper.GBK2UTF8(content, contentType)
+			if err != nil {
+				return err
+			}
 			err = f.setCache(cacheKey, site.Domain, response.StatusCode, response.Header, content, "")
 			if err != nil {
 				return err
@@ -226,9 +237,8 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 		return nil
 	}
 	if response.StatusCode > 400 && response.StatusCode < 500 {
-		content := []byte("访问的页面不存在")
 		response.Header.Set("Content-Type", "text/plain")
-		helper.WrapResponseBody(response, content)
+		helper.WrapResponseBody(response, []byte("访问的页面不存在"))
 	}
 	return nil
 }
@@ -274,22 +284,26 @@ func (f *Frontend) handleCacheResponse(cacheResponse *CacheResponse, site *Site,
 	if strings.Contains(contentType, "text/html") {
 		originUserAgent := request.Context().Value(OriginUA).(string)
 		isSpider := config.IsCrawler(originUserAgent)
-		isIndexPage := helper.IsIndexPage(requestPath)
-		doc, _ := html.Parse(bytes.NewReader(content))
-		content, _ = site.handleHtmlResponse(doc, scheme, requestHost, requestPath, cacheResponse.RandomHtml, isIndexPage, isSpider, buffer)
+		isIndexPage := helper.IsIndexPage(requestPath, request.URL.RawQuery)
+		doc, err := html.Parse(bytes.NewReader(content))
+		if err != nil {
+			slog.Error("html parse", "message", err.Error())
+		}
+		content, err = site.handleHtmlResponse(doc, scheme, requestHost, requestPath, cacheResponse.RandomHtml, isIndexPage, isSpider, buffer)
+		if err != nil {
+			slog.Error("handleHtmlResponse", "message", err.Error())
+		}
 	} else if strings.Contains(contentType, "css") || strings.Contains(contentType, "javascript") {
 		for index, find := range site.Finds {
 			content = bytes.ReplaceAll(content, []byte(find), []byte(site.Replaces[index]))
 		}
-		contentStr := site.replaceHost(content, scheme, requestHost)
-		content = []byte(contentStr)
+		content = site.replaceHost(content, scheme, requestHost)
 	}
 
 	for key, values := range cacheResponse.Header {
 		writer.Header()[key] = values
 	}
-	contentLength := int64(len(content))
-	writer.Header().Set("Content-Length", strconv.FormatInt(contentLength, 10))
+	writer.Header().Set("Content-Length", strconv.FormatInt(int64(len(content)), 10))
 	if cacheResponse.StatusCode != 0 {
 		writer.WriteHeader(cacheResponse.StatusCode)
 	} else {
@@ -402,7 +416,7 @@ func (f *Frontend) setCache(url string, domain string, statusCode int, header ht
 	defer func() {
 		_ = file.Close()
 	}()
-	if err := gob.NewEncoder(file).Encode(resp); err != nil {
+	if err = gob.NewEncoder(file).Encode(resp); err != nil {
 		slog.Error("gob.NewEncoder error", filename, err.Error())
 		return err
 	}
