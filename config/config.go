@@ -58,9 +58,15 @@ func parseAppConfig() (*Config, error) {
 	}
 	//关键字文件
 	keywordData, err := os.ReadFile("config/keywords.txt")
-	if err == nil && len(keywordData) > 0 {
-		conf.Keywords = strings.Split(strings.Replace(helper.HtmlEntities(string(keywordData)), "\r", "", -1), "\n")
+	if err != nil {
+		return nil, err
 	}
+	if len(keywordData) < 1 {
+		return nil, errors.New("config/keywords.txt 不能没有内容")
+	}
+
+	conf.Keywords = strings.Split(strings.Replace(helper.HtmlEntities(string(keywordData)), "\r", "", -1), "\n")
+
 	//统计js
 	js, err := os.ReadFile("config/inject.js")
 	if err == nil {

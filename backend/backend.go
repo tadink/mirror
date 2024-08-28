@@ -523,6 +523,10 @@ func (b *Backend) saveBaseConfig(writer http.ResponseWriter, request *http.Reque
 	}
 	if action == "keyword_config" {
 		content = strings.ReplaceAll(content, "\r", "")
+		if len(content) < 1 {
+			_, _ = writer.Write([]byte(`{"code":4,"msg":"keywords不能为空"}`))
+			return
+		}
 		err = os.WriteFile("config/keywords.txt", []byte(content), os.ModePerm)
 		if err != nil {
 			_, _ = writer.Write([]byte(`{"code":4,"msg":` + err.Error() + `}`))

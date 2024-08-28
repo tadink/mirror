@@ -193,7 +193,7 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 			if len(content) == 0 {
 				return fmt.Errorf("content is nil %s", site.targetUrl.Host+response.Request.URL.Path)
 			}
-			randomHtml := helper.RandHtml(site.Domain)
+			randomHtml := helper.RandHtml(site.Domain, len(config.Conf.Keywords))
 			err = f.setCache(cacheKey, site.Domain, response.StatusCode, response.Header, content, randomHtml)
 			if err != nil {
 				return err

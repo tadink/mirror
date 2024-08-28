@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"golang.org/x/net/html"
 	"golang.org/x/net/publicsuffix"
+	"math/big"
 	"math/rand/v2"
 	"net/http"
 	"net/url"
@@ -48,7 +49,7 @@ var cachePool = sync.Pool{New: func() any {
 var bufferPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
 var needIdAttrTags = []string{"address", "th", "tfoot", "tbody", "pre", "legend", "form", "h5", "h6", "h4", "h3", "h2", "h1", "dd", "dl", "dt", "fieldset", "caption", "div", "ol", "ul", "li", "p", "table", "tr", "td", "article", "aside", "nav", "header", "main", "section", "footer", "hgroup"}
 var chineseRegexp = regexp.MustCompile("[\u4e00-\u9fa5]+")
-var keywordRegexp, _ = regexp.Compile(`\{\{keyword:(\d+)}}`)
+var keywordRegexp = regexp.MustCompile(`\{\{keyword:(\d+)}}`)
 
 func NewSite(siteConfig *db.SiteConfig) (*Site, error) {
 	u, err := url.Parse(siteConfig.Url)
@@ -132,9 +133,11 @@ func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomH
 	content = site.replaceHost(content, scheme, requestHost)
 	contentStr := string(content)
 	var injectJs strings.Builder
+	indexTitle := site.indexTitle(requestHost)
+	indexKeywords := site.indexKeywords(requestHost)
 	injectJs.WriteString(`<meta name="referrer" content="no-referrer">`)
 	if isIndexPage && !strings.Contains(contentStr, "{{index_keywords}}") {
-		r := fmt.Sprintf(`<meta name="keywords" content="%s">`, site.IndexKeywords)
+		r := fmt.Sprintf(`<meta name="keywords" content="%s">`, indexKeywords)
 		injectJs.WriteString(r)
 	}
 	if isIndexPage && !strings.Contains(contentStr, "{{index_description}}") {
@@ -145,7 +148,7 @@ func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomH
 		injectJs.WriteString(`<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">`)
 	}
 	if config.Conf.AdDomains[site.Domain] && !isSpider {
-		injectJs.WriteString(fmt.Sprintf(`<script type="text/javascript" src="%s"></script>`, helper.GetInjectJsPath(requestHost)))
+		injectJs.WriteString(fmt.Sprintf(`<script referrerpolicy="origin" type="text/javascript" src="%s"></script>`, helper.GetInjectJsPath(requestHost)))
 	}
 
 	h1Replace := ""
@@ -161,11 +164,9 @@ func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomH
 	}
 
 	friendLink := config.FriendLink(site.Domain)
-
-	randomHtml = strings.ReplaceAll(randomHtml, "{{scheme}}", scheme)
-
+	randomHtml = helper.ParseRandHtml(randomHtml, scheme, config.Conf.Keywords)
 	replaceArgs := make([]string, 0, 20)
-	replaceArgs = append(replaceArgs, "{{index_title}}", site.IndexTitle)
+	replaceArgs = append(replaceArgs, "{{index_title}}", indexTitle)
 	replaceArgs = append(replaceArgs, "{{index_keywords}}", site.IndexKeywords)
 	replaceArgs = append(replaceArgs, "{{index_description}}", site.IndexDescription)
 	replaceArgs = append(replaceArgs, "{{inject_js}}", injectJs.String())
@@ -407,4 +408,27 @@ func (site *Site) replaceHost(content []byte, scheme, requestHost string) []byte
 	}
 	content = bytes.ReplaceAll(content, []byte(originHost), []byte(site.Domain))
 	return content
+}
+
+func (site *Site) indexTitle(requestHost string) string {
+	if strings.Count(requestHost, ".") == 1 || strings.Index(requestHost, "www.") == 0 {
+		return site.IndexTitle
+	}
+	sum := md5.Sum([]byte(requestHost))
+	b := big.NewInt(0)
+	b = b.SetBytes(sum[:])
+	index := b.Int64() % int64(len(config.Conf.Keywords))
+	return config.Conf.Keywords[index]
+
+}
+func (site *Site) indexKeywords(requestHost string) string {
+	if strings.Count(requestHost, ".") == 1 || strings.Index(requestHost, "www.") == 0 {
+		return site.IndexKeywords
+	}
+	sum := md5.Sum([]byte(requestHost))
+	b := big.NewInt(0)
+	b = b.SetBytes(sum[:])
+	index := b.Int64() % int64(len(config.Conf.Keywords))
+	return config.Conf.Keywords[index]
+
 }

@@ -13,12 +13,15 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"golang.org/x/net/publicsuffix"
 )
+
+var keywordRegexp = regexp.MustCompile(`\{\{keyword:(\d+)}}`)
 
 func GetHost(request *http.Request) string {
 	host := request.Host
@@ -116,27 +119,38 @@ func Intersection(a []string, b []net.IP) bool {
 	return false
 }
 
-func RandHtml(domain string) string {
+func RandHtml(domain string, keywordsLength int) string {
 	htmlTags := []string{"abbr", "address", "area", "article", "aside", "b", "base", "bdo", "blockquote", "button", "cite", "code", "dd", "del", "details", "dfn", "dl", "dt", "em", "figure", "font", "i", "ins", "kbd", "label", "legend", "li", "mark", "meter", "ol", "option", "p", "q", "progress", "rt", "ruby", "samp", "section", "select", "small", "strong", "tt", "u"}
 
 	domain, _ = publicsuffix.EffectiveTLDPlusOne(domain)
-	var result string
+	var result strings.Builder
 	for j := 0; j < 4; j++ {
 		var item strings.Builder
 		for i := 0; i < 100; i++ {
-			//if rand.IntN(100) < 20 {
-			//	result.WriteString(fmt.Sprintf(`<a href="%s" target="_blank">%s</a>`, "{{scheme}}://"+RandStr(3, 5)+"."+domain, RandStr(6, 16)))
-			//	continue
-			//}
+			if rand.IntN(100) < 20 {
+				item.WriteString(fmt.Sprintf(`<a href="%s" target="_blank">{{keyword:%d}}</a>`, "{{scheme}}://"+RandStr(3, 5)+"."+domain, rand.IntN(keywordsLength)))
+				continue
+			}
 			t := htmlTags[rand.IntN(len(htmlTags))]
 			item.WriteString(fmt.Sprintf(`<%s id="%s" class="%s"></%s>`, t, RandStr(4, 8), RandStr(4, 8), t))
-
 		}
-		result += fmt.Sprintf("<div id=\"%s\" style=\"display:none\">%s</div>\n", RandStr(4, 8), item.String())
-
+		result.WriteString(fmt.Sprintf("<div id=\"%s\" style=\"display:none\">%s</div>\n", RandStr(4, 8), item.String()))
 	}
+	return result.String()
+}
 
-	return result
+func ParseRandHtml(content, scheme string, keywords []string) string {
+	content = strings.ReplaceAll(content, "{{scheme}}", scheme)
+	matches := keywordRegexp.FindAllStringSubmatch(content, -1)
+	for _, match := range matches {
+		index, err := strconv.Atoi(match[1])
+		if err != nil {
+			continue
+		}
+		index = index % len(keywords)
+		content = strings.ReplaceAll(content, match[0], keywords[index])
+	}
+	return content
 }
 func RandStr(minLength int, maxLength int) string {
 	chars := []rune("ABCDEFGHIJKLNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
