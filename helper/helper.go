@@ -4,18 +4,24 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/md5"
+	"crypto/sha1"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"golang.org/x/net/html/charset"
 	"io"
 	"math/rand/v2"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
+	"regexp"
+	"seo/mirror/db"
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"golang.org/x/net/html/charset"
 
 	"golang.org/x/net/publicsuffix"
 )
@@ -41,6 +47,12 @@ func GetInjectJsPath(host string) string {
 	}
 	return fmt.Sprintf("/%s.js", name)
 
+}
+
+func GetArticlePath(host string) string {
+	hash := md5.Sum([]byte(host))
+	name := hex.EncodeToString(hash[:])
+	return name[0:16]
 }
 
 func IsIndexPage(path, query string) bool {
@@ -116,19 +128,10 @@ func Intersection(a []string, b []net.IP) bool {
 	return false
 }
 
-func RandHtml(domain string) string {
-	htmlTags := []string{"abbr", "address", "area", "article", "aside", "b", "base", "bdo", "blockquote", "button", "cite", "code", "dd", "del", "details", "dfn", "dl", "dt", "em", "figure", "font", "i", "ins", "kbd", "label", "legend", "li", "mark", "meter", "ol", "option", "p", "q", "progress", "rt", "ruby", "samp", "section", "select", "small", "strong", "tt", "u"}
+func RandHtml(scheme, domain string, keywords []string) string {
 	var result strings.Builder
-	domain, _ = publicsuffix.EffectiveTLDPlusOne(domain)
-	for i := 0; i < 100; i++ {
-		if rand.IntN(100) < 20 {
-			result.WriteString(fmt.Sprintf(`<a href="%s" target="_blank">%s</a>`, "{{scheme}}://"+RandStr(3, 5)+"."+domain, RandStr(6, 16)))
-			continue
-		}
-		t := htmlTags[rand.IntN(len(htmlTags))]
-		result.WriteString(fmt.Sprintf(`<%s id="%s" class="%s">%s</%s>`, t, RandStr(4, 8), RandStr(4, 8), RandStr(6, 16), t))
-
-	}
+	result.WriteString(GetKeywordList(domain, keywords))
+	result.WriteString(GetArticleList(scheme, domain, keywords))
 	return "<div style=\"display:none\">" + result.String() + "</div>"
 }
 func RandStr(minLength int, maxLength int) string {
@@ -263,4 +266,133 @@ func WrapResponseBody(response *http.Response, content []byte) {
 	response.Body = readAndCloser
 	response.ContentLength = contentLength
 	response.Header.Set("Content-Length", strconv.FormatInt(contentLength, 10))
+}
+func RenderTemplate(data []byte, article *db.Article, scheme, domain string) string {
+	replacer := strings.NewReplacer(
+		"{{artile_titile}}", article.Title,
+		"{{article_pic}}", article.Pic,
+		"{{article_summary}}", article.Summary,
+		"{{article_content}}", article.Content,
+		"{{article_author}}", article.Author,
+		"{{article_type_name}}", article.TypeName,
+		"{{article_craeted_at}}", article.CreatedAt,
+	)
+	content := replacer.Replace(string(data))
+	c := strings.Count(content, "{{article_url}}")
+	for i := 0; i < c; i++ {
+		content = strings.Replace(content, "{{article_url}}", GenerateArticleURL(scheme, domain), 1)
+	}
+	return content
+}
+func GetArticleCache(domain, requestPath string) (string, error) {
+	sum := sha1.Sum([]byte(domain + requestPath))
+	hash := hex.EncodeToString(sum[:])
+	dir := path.Join("articleCache", domain, hash[:2])
+	filename := path.Join(dir, hash)
+	_, err := os.Stat(filename)
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+func SetArticleCache(domain, requestPath, data string) error {
+	sum := sha1.Sum([]byte(domain + requestPath))
+	hash := hex.EncodeToString(sum[:])
+	dir := path.Join("articleCache", domain, hash[:2])
+	if !IsExist(dir) {
+		err := os.MkdirAll(dir, os.ModePerm)
+		if err != nil {
+
+			return err
+		}
+	}
+	filename := path.Join(dir, hash)
+	err := os.WriteFile(filename, []byte(data), os.ModePerm)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func GetArticleContent(scheme, domain, requestPath, articleType string, targetUrl *url.URL) (string, error) {
+	c, err := GetArticleCache(domain, requestPath)
+	if err == nil {
+		return c, nil
+	}
+	templateFile := targetUrl.Host + ".html"
+	data, _ := os.ReadFile("templates/" + templateFile)
+	if data == nil {
+		data, err = os.ReadFile("templates/common.html")
+		if err != nil {
+			return "", err
+		}
+	}
+
+	article, err := db.GetArticle(articleType)
+	if err != nil {
+
+		return "", err
+	}
+	template := RenderTemplate(data, article, scheme, domain)
+	SetArticleCache(domain, requestPath, template)
+	return template, nil
+}
+func GetKeywordList(domain string, keywords []string) string {
+	templateFile := domain + ".html"
+	data, err := os.ReadFile("keywrod_list/" + templateFile)
+	if data == nil || err != nil {
+		data, err = os.ReadFile("keywrod_list/common.html")
+		if err != nil {
+			return ""
+		}
+	}
+	content := string(data)
+	c := strings.Count(content, "{{rand_str}}")
+	for i := 0; i < c; i++ {
+		content = strings.Replace(content, "{{rand_str}}", RandStr(4, 8), 1)
+	}
+	keywordRe, _ := regexp.Compile(`\{\{keyword:(\d+)\}\}`)
+	matches := keywordRe.FindAllStringSubmatch(content, -1)
+	if matches == nil {
+		return content
+	}
+	for _, match := range matches {
+		i, _ := strconv.Atoi(match[1])
+
+		content = strings.ReplaceAll(content, match[0], keywords[i%len(keywords)])
+	}
+	return content
+
+}
+func GetArticleList(scheme, domain string, keywords []string) string {
+	templateFile := domain + ".html"
+	data, err := os.ReadFile("article_list/" + templateFile)
+	if data == nil || err != nil {
+		data, err = os.ReadFile("article_list/common.html")
+		if err != nil {
+			return ""
+		}
+	}
+	content := string(data)
+	keywordRe, _ := regexp.Compile(`\{\{keyword:(\d+)\}\}`)
+	matches := keywordRe.FindAllStringSubmatch(content, -1)
+	if matches == nil {
+		return content
+	}
+	for _, match := range matches {
+		i, _ := strconv.Atoi(match[1])
+		content = strings.ReplaceAll(content, match[0], keywords[i%len(keywords)])
+	}
+	c := strings.Count(content, "{{article_url}}")
+	for i := 0; i < c; i++ {
+		content = strings.Replace(content, "{{article_url}}", GenerateArticleURL(scheme, domain), 1)
+	}
+	return content
+
+}
+func GenerateArticleURL(scheme, domain string) string {
+	return scheme + "://" + domain + "/__news__/" + RandStr(4, 8)
 }

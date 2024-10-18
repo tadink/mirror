@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
+	"math/rand/v2"
 	"strings"
 
 	_ "github.com/glebarez/go-sqlite"
@@ -26,6 +28,17 @@ type SiteConfig struct {
 	CacheEnable      bool     `json:"cache_enable"`
 	BaiduPushKey     string   `json:"baidu_push_key"`
 	SmPushKey        string   `json:"sm_push_key"`
+	ArticleType      string   `json:"article_type"`
+}
+type Article struct {
+	Id        int    `json:"id"`
+	Title     string `json:"title"`
+	Summary   string `json:"summary"`
+	Pic       string `json:"pic"`
+	Content   string `json:"content"`
+	Author    string `json:"author"`
+	TypeName  string `json:"type_name"`
+	CreatedAt string `json:"created_at"`
 }
 
 var DB *sql.DB
@@ -256,7 +269,99 @@ func ForbiddenWordReplace(forbiddenWord, replaceWord, splitWord string) ([]strin
 	}
 	return domainArr, err
 }
+func GetArticle(articleType string) (*Article, error) {
+	var times int = 1
+	articelId := 0
+	for {
+		articelId, _ = GetRandomArticleId(articleType)
+		if articelId > 0 || times > 4 {
+			break
+		}
+		times += 1
+	}
+	if articelId <= 0 {
+		return nil, errors.New("获取随机ID错误")
+	}
+	return QueryArticle(articelId)
 
+}
+func GetRandomArticleId(articleType string) (int, error) {
+	count, err := QueryArticleCount(articleType)
+	if err != nil {
+		return 0, err
+	}
+	order := "order by id "
+	switch rand.IntN(3) {
+	case 1:
+		order = "order by title "
+	case 2:
+		order = "order by created_at "
+	}
+	offset := rand.IntN(count)
+	s := fmt.Sprintf("select id from article %s limit %d,1", order, offset)
+	stmt, err := DB.Prepare(s)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		err = stmt.Close()
+		if err != nil {
+			panic(err)
+		}
+	}()
+	row := stmt.QueryRow()
+	if row.Err() != nil {
+		return 0, err
+	}
+	var articleId int
+	err = row.Scan(&articleId)
+	if err != nil {
+		return 0, err
+	}
+	return articleId, nil
+}
+func QueryArticleCount(articleType string) (int, error) {
+	stmt, err := DB.Prepare("select count(id) from article where type_name=?")
+	if err != nil {
+		return 0, err
+	}
+	row := stmt.QueryRow(articleType)
+	if row.Err() != nil {
+		return 0, err
+	}
+	var count int
+	err = row.Scan(&count)
+	if err != nil {
+		return count, err
+	}
+	err = stmt.Close()
+	if err != nil {
+		slog.Error(err.Error())
+	}
+	return count, err
+}
+func QueryArticle(articleId int) (*Article, error) {
+	stmt, err := DB.Prepare(`select * from article where id=?`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		err = stmt.Close()
+		if err != nil {
+			panic(err)
+		}
+	}()
+	row := stmt.QueryRow(articleId)
+	if row.Err() != nil {
+		return nil, err
+	}
+	a := new(Article)
+	err = row.Scan(&a.Id, &a.Title, &a.Summary, &a.Pic, &a.Content, &a.Author, &a.TypeName, &a.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return a, nil
+}
 func createSiteTable() error {
 
 	_, err := DB.Exec(`create table if not exists website_config  (
@@ -275,7 +380,23 @@ func createSiteTable() error {
 		h1replace varchar(20),
 		cache_time integer,
 		baidu_push_key varchar(255),
-		sm_push_key varchar(255)	
+		sm_push_key varchar(255),
+		article_type varchar(100)
 )`)
+	if err != nil {
+		return err
+	}
+	_, err = DB.Exec(`CREATE TABLE IF NOT EXISTS article (
+  id INTEGER PRIMARY KEY AUTOINCREMENT ,
+  title varchar(255)  NOT NULL,
+  summary varchar(255)  NOT NULL DEFAULT '',
+  pic varchar(255)  NOT NULL DEFAULT '',
+  content text  NOT NULL,
+  author varchar(255)  NOT NULL DEFAULT '',
+  type_name varchar(255)  NOT NULL DEFAULT '',
+  created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+);
+CREATE INDEX IF NOT EXISTS  title_idx on article(title);
+CREATE INDEX IF NOT EXISTS  created_at_idx on article(created_at);`)
 	return err
 }

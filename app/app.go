@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"golang.org/x/net/netutil"
 	"log/slog"
 	"net"
 	"net/http"
@@ -12,6 +11,8 @@ import (
 	"seo/mirror/config"
 	"seo/mirror/frontend"
 	"time"
+
+	"golang.org/x/net/netutil"
 )
 
 type Application struct {
@@ -32,6 +33,7 @@ func (app *Application) Start() {
 	}
 	l = netutil.LimitListener(l, 256*2048)
 	app.FrontendServer = &http.Server{Handler: f}
+
 	b, err := backend.NewBackend(f)
 	if err != nil {
 		slog.Error("new backend" + err.Error())

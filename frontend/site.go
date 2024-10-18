@@ -6,8 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"golang.org/x/net/html"
-	"golang.org/x/net/publicsuffix"
 	"math/rand/v2"
 	"net/http"
 	"net/url"
@@ -19,6 +17,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
+
+	"golang.org/x/net/html"
+	"golang.org/x/net/publicsuffix"
 )
 
 type Site struct {
@@ -30,7 +32,6 @@ type CacheResponse struct {
 	StatusCode int
 	Body       []byte
 	Header     http.Header
-	RandomHtml string
 }
 
 func (cr *CacheResponse) free() {
@@ -78,17 +79,19 @@ func NewSite(siteConfig *db.SiteConfig) (*Site, error) {
 	return site, nil
 }
 func (site *Site) handleHtmlResponse(document *html.Node, scheme, requestHost, requestPath, randomHtml string, isIndexPage, isSpider bool, buffer *bytes.Buffer) ([]byte, error) {
-	site.handleHtmlNode(document, scheme, requestHost, requestPath, isIndexPage)
+	var pageTitle string
+	site.handleHtmlNode(document, scheme, requestHost, requestPath, isIndexPage, &pageTitle)
+
 	err := html.Render(buffer, document)
 	if err != nil {
 		return nil, err
 	}
-	content := site.ParseTemplateTags(buffer.Bytes(), scheme, requestHost, randomHtml, isIndexPage, isSpider)
+	content := site.ParseTemplateTags(buffer.Bytes(), scheme, requestHost, requestPath, randomHtml, isIndexPage, isSpider, pageTitle)
 	return content, nil
 
 }
 
-func (site *Site) handleHtmlNode(node *html.Node, scheme, requestHost, requestPath string, isIndexPage bool) {
+func (site *Site) handleHtmlNode(node *html.Node, scheme, requestHost, requestPath string, isIndexPage bool, pageTitle *string) {
 	switch node.Type {
 	case html.CommentNode:
 		node.Data = ""
@@ -103,6 +106,9 @@ func (site *Site) handleHtmlNode(node *html.Node, scheme, requestHost, requestPa
 		}
 		if node.Data == "title" {
 			site.transformTitleNode(node, isIndexPage)
+			if *pageTitle == "" {
+				*pageTitle = node.FirstChild.Data
+			}
 		}
 		if node.Data == "script" {
 			site.transformScriptNode(node)
@@ -123,16 +129,31 @@ func (site *Site) handleHtmlNode(node *html.Node, scheme, requestHost, requestPa
 	default:
 	}
 	for c := node.FirstChild; c != nil; c = c.NextSibling {
-		site.handleHtmlNode(c, scheme, requestHost, requestPath, isIndexPage)
+		site.handleHtmlNode(c, scheme, requestHost, requestPath, isIndexPage, pageTitle)
 	}
 
 }
 
-func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomHtml string, isIndexPage, isSpider bool) []byte {
+func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, requestPath, randomHtml string, isIndexPage, isSpider bool, pageTitle string) []byte {
 	content = site.replaceHost(content, scheme, requestHost)
 	contentStr := string(content)
 	var injectJs strings.Builder
+	if isIndexPage {
+		pageTitle = site.IndexTitle
+	}
 	injectJs.WriteString(`<meta name="referrer" content="no-referrer">`)
+	injectJs.WriteString(fmt.Sprintf(`<link rel="canonical" href="%s"/>`, scheme+"://"+requestHost+requestPath))
+	injectJs.WriteString(fmt.Sprintf(`<script type="application/ld+json">{
+		"@context": "https://ziyuan.baidu.com/contexts/cambrian.jsonld",
+		"@id": "%s",
+		 "appid": "None",
+		"title": "%s",
+		"images": [""],
+		"description": "",
+		"pubDate": "%s",
+		"upDate": "%s",
+		"lrDate": "%s",
+	}</script>`, scheme+"://"+requestHost+requestPath, pageTitle, time.Now().Format(time.DateTime), time.Now().Format(time.DateTime), time.Now().Format(time.DateTime)))
 	if isIndexPage && !strings.Contains(contentStr, "{{index_keywords}}") {
 		r := fmt.Sprintf(`<meta name="keywords" content="%s">`, site.IndexKeywords)
 		injectJs.WriteString(r)
@@ -140,6 +161,9 @@ func (site *Site) ParseTemplateTags(content []byte, scheme, requestHost, randomH
 	if isIndexPage && !strings.Contains(contentStr, "{{index_description}}") {
 		r := fmt.Sprintf(`<meta name="description" content="%s">`, site.IndexDescription)
 		injectJs.WriteString(r)
+	}
+	if isIndexPage && (requestHost == site.Domain || strings.Index(requestHost, "www.") == 0) {
+		injectJs.WriteString(fmt.Sprintf(`<link rel="alternate" media="only screen and (max-width: 640px)" href="%s">`, scheme+"://m."+site.Domain))
 	}
 	if scheme == "https" {
 		injectJs.WriteString(`<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">`)
@@ -286,6 +310,7 @@ func (site *Site) transformANode(node *html.Node, scheme, requestHost, requestPa
 		node.Attr[i].Val = "#"
 		break
 	}
+	node.Attr = append(node.Attr, html.Attribute{Key: "rel", Val: "nofollow"})
 }
 
 func (site *Site) transformLinkNode(node *html.Node, requestHost string) {

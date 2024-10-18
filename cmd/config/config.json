@@ -1,13 +1,9 @@
 {
   "port": "8899",
   "admin_port":"8898",
-  "inject_js_path":"/abcdfdsrew/abcd.js",
   "cache_path": "./cache",
   "admin_uri": "/admin/reverseproxy",
   "user_agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36",
-  "global_replace": [
-    {"needle":"镜像程序","replace": "全局替换"}
-  ],
   "spider": [
     "TencentTraveler",
     "Baiduspider+",

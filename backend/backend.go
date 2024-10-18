@@ -322,6 +322,10 @@ func (b *Backend) siteSave(writer http.ResponseWriter, request *http.Request) {
 		_, _ = writer.Write([]byte(`{"code":4,"msg":` + err.Error() + `}`))
 		return
 	}
+	if request.Form.Get("article_type") == "" {
+		_, _ = writer.Write([]byte(`{"code":4,"msg":"文章类型不能为空"}`))
+		return
+	}
 	siteConfig := db.SiteConfig{
 		Id:               i,
 		Domain:           domain,
@@ -339,6 +343,7 @@ func (b *Backend) siteSave(writer http.ResponseWriter, request *http.Request) {
 		CacheTime:        cacheTime,
 		BaiduPushKey:     "",
 		SmPushKey:        "",
+		ArticleType:      request.Form.Get("article_type"),
 	}
 
 	if siteConfig.Id == 0 {
@@ -445,6 +450,7 @@ func (b *Backend) siteImport(writer http.ResponseWriter, request *http.Request) 
 			CacheTime:        cacheTime,
 			BaiduPushKey:     "",
 			SmPushKey:        "",
+			ArticleType:      row[14],
 		}
 		configs = append(configs, siteConfig)
 	}

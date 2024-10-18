@@ -103,6 +103,22 @@ func (f *Frontend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	scheme := r.Header.Get("scheme")
+	if strings.Index(r.URL.Path, "/__news__") == 0 {
+		c, err := helper.GetArticleContent(scheme, site.Domain, r.URL.Path, site.ArticleType, site.targetUrl)
+		if err != nil {
+			_, _ = w.Write([]byte(err.Error()))
+			return
+		}
+		w.Header().Set("Content-Type", "text/html;charset=utf-8")
+		_, _ = w.Write([]byte(c))
+		return
+	}
+	if strings.Index(r.URL.Path, "/__resource__") == 0 {
+		http.ServeFile(w, r, r.URL.Path)
+		return
+
+	}
 
 	ua := r.UserAgent()
 	if config.IsCrawler(ua) && !config.IsGoodCrawler(ua) { //如果是蜘蛛但不是好蜘蛛
@@ -110,7 +126,7 @@ func (f *Frontend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("页面未找到"))
 		return
 	}
-	scheme := r.Header.Get("scheme")
+
 	buffer := bufferPool.Get().(*bytes.Buffer)
 	buffer.Reset()
 	ctx := context.WithValue(r.Context(), SITE, site)
@@ -129,12 +145,12 @@ func (f *Frontend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (f *Frontend) Route(writer http.ResponseWriter, request *http.Request) {
 	site := request.Context().Value(SITE).(*Site)
-	cacheKey := site.Domain + request.URL.Path + request.URL.RawQuery
+	cacheKey := site.targetUrl.Host + request.URL.Path + request.URL.RawQuery
 	if site.CacheEnable {
 		cache := cachePool.Get().(*CacheResponse)
 		defer cachePool.Put(cache)
 		cache.free()
-		err := f.getCache(cacheKey, site.Domain, site.CacheTime, false, cache)
+		err := f.getCache(cacheKey, site.targetUrl.Host, site.CacheTime, false, cache)
 		if err == nil {
 			f.handleCacheResponse(cache, site, writer, request)
 			return
@@ -151,11 +167,11 @@ func (f *Frontend) ErrorHandler(writer http.ResponseWriter, request *http.Reques
 		slog.Error("error handler", request.URL.String(), e.Error())
 	}
 	site := request.Context().Value(SITE).(*Site)
-	cacheKey := site.Domain + request.URL.Path + request.URL.RawQuery
+	cacheKey := site.targetUrl.Host + request.URL.Path + request.URL.RawQuery
 	cache := cachePool.Get().(*CacheResponse)
 	defer cachePool.Put(cache)
 	cache.free()
-	err := f.getCache(cacheKey, site.Domain, site.CacheTime, true, cache)
+	err := f.getCache(cacheKey, site.targetUrl.Host, site.CacheTime, true, cache)
 	if err != nil {
 		writer.WriteHeader(404)
 		_, _ = writer.Write([]byte("请求出错，请检查源站"))
@@ -172,7 +188,7 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 		return f.handleRedirectResponse(response, requestHost)
 	}
 
-	cacheKey := site.Domain + response.Request.URL.Path + response.Request.URL.RawQuery
+	cacheKey := site.targetUrl.Host + response.Request.URL.Path + response.Request.URL.RawQuery
 	if response.StatusCode == 200 {
 		buffer := response.Request.Context().Value(BUFFER).(*bytes.Buffer)
 		err := helper.ReadResponse(response, buffer)
@@ -193,8 +209,8 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 			if len(content) == 0 {
 				return fmt.Errorf("content is nil %s", site.targetUrl.Host+response.Request.URL.Path)
 			}
-			randomHtml := helper.RandHtml(site.Domain)
-			err = f.setCache(cacheKey, site.Domain, response.StatusCode, response.Header, content, randomHtml)
+			randomHtml := helper.RandHtml(scheme, site.Domain, config.Conf.Keywords)
+			err = f.setCache(cacheKey, site.targetUrl.Host, response.StatusCode, response.Header, content)
 			if err != nil {
 				return err
 			}
@@ -218,7 +234,7 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 			if err != nil {
 				return err
 			}
-			err = f.setCache(cacheKey, site.Domain, response.StatusCode, response.Header, content, "")
+			err = f.setCache(cacheKey, site.targetUrl.Host, response.StatusCode, response.Header, content)
 			if err != nil {
 				return err
 			}
@@ -229,7 +245,7 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 			helper.WrapResponseBody(response, content)
 			return nil
 		}
-		err = f.setCache(cacheKey, site.Domain, response.StatusCode, response.Header, content, "")
+		err = f.setCache(cacheKey, site.targetUrl.Host, response.StatusCode, response.Header, content)
 		if err != nil {
 			return err
 		}
@@ -237,8 +253,13 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 		return nil
 	}
 	if response.StatusCode > 400 && response.StatusCode < 500 {
-		response.Header.Set("Content-Type", "text/plain")
-		helper.WrapResponseBody(response, []byte("访问的页面不存在"))
+		c, err := helper.GetArticleContent(scheme, site.Domain, response.Request.URL.Path, site.ArticleType, site.targetUrl)
+		if err != nil {
+			return err
+		}
+		response.Header.Set("Content-Type", "text/html;charset=utf-8")
+		response.StatusCode = 200
+		helper.WrapResponseBody(response, []byte(c))
 	}
 	return nil
 }
@@ -289,7 +310,8 @@ func (f *Frontend) handleCacheResponse(cacheResponse *CacheResponse, site *Site,
 		if err != nil {
 			slog.Error("html parse", "message", err.Error())
 		}
-		content, err = site.handleHtmlResponse(doc, scheme, requestHost, requestPath, cacheResponse.RandomHtml, isIndexPage, isSpider, buffer)
+		randHtml := helper.RandHtml(scheme, site.Domain, config.Conf.Keywords)
+		content, err = site.handleHtmlResponse(doc, scheme, requestHost, requestPath, randHtml, isIndexPage, isSpider, buffer)
 		if err != nil {
 			slog.Error("handleHtmlResponse", "message", err.Error())
 		}
@@ -384,7 +406,7 @@ func (f *Frontend) getCache(requestUrl string, domain string, cacheTime int64, f
 	return nil
 }
 
-func (f *Frontend) setCache(url string, domain string, statusCode int, header http.Header, content []byte, randomHtml string) error {
+func (f *Frontend) setCache(url string, domain string, statusCode int, header http.Header, content []byte) error {
 	contentType := header.Get("Content-Type")
 	if strings.Contains(strings.ToLower(contentType), "charset") {
 		contentPartArr := strings.Split(contentType, ";")
@@ -396,7 +418,6 @@ func (f *Frontend) setCache(url string, domain string, statusCode int, header ht
 	resp.Header = header
 	resp.Body = content
 	resp.StatusCode = statusCode
-	resp.RandomHtml = randomHtml
 	sum := sha1.Sum([]byte(url))
 	hash := hex.EncodeToString(sum[:])
 	dir := path.Join(config.Conf.CachePath, domain, hash[:2])
