@@ -95,6 +95,13 @@ func (f *Frontend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	ua := r.UserAgent()
+	if config.IsCrawler(ua) && !config.IsGoodCrawler(ua) { //如果是蜘蛛但不是好蜘蛛
+		w.WriteHeader(404)
+		_, _ = w.Write([]byte("页面未找到"))
+		return
+	}
+
 	if r.URL.Path == helper.GetInjectJsPath(host) {
 		w.Header().Set("Content-Type", "text/javascript;charset=utf-8")
 		_, err = w.Write([]byte(config.Conf.InjectJs))
@@ -118,13 +125,6 @@ func (f *Frontend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, r.URL.Path)
 		return
 
-	}
-
-	ua := r.UserAgent()
-	if config.IsCrawler(ua) && !config.IsGoodCrawler(ua) { //如果是蜘蛛但不是好蜘蛛
-		w.WriteHeader(404)
-		_, _ = w.Write([]byte("页面未找到"))
-		return
 	}
 
 	buffer := bufferPool.Get().(*bytes.Buffer)
@@ -209,7 +209,7 @@ func (f *Frontend) ModifyResponse(response *http.Response) error {
 			if len(content) == 0 {
 				return fmt.Errorf("content is nil %s", site.targetUrl.Host+response.Request.URL.Path)
 			}
-			randomHtml := helper.RandHtml(scheme, site.Domain, config.Conf.Keywords)
+			randomHtml := helper.RandHtml(scheme, site.Domain, config.Conf.Keywords, site.ArticleType)
 			err = f.setCache(cacheKey, site.targetUrl.Host, response.StatusCode, response.Header, content)
 			if err != nil {
 				return err
@@ -310,7 +310,7 @@ func (f *Frontend) handleCacheResponse(cacheResponse *CacheResponse, site *Site,
 		if err != nil {
 			slog.Error("html parse", "message", err.Error())
 		}
-		randHtml := helper.RandHtml(scheme, site.Domain, config.Conf.Keywords)
+		randHtml := helper.RandHtml(scheme, site.Domain, config.Conf.Keywords, site.ArticleType)
 		content, err = site.handleHtmlResponse(doc, scheme, requestHost, requestPath, randHtml, isIndexPage, isSpider, buffer)
 		if err != nil {
 			slog.Error("handleHtmlResponse", "message", err.Error())

@@ -362,6 +362,47 @@ func QueryArticle(articleId int) (*Article, error) {
 	}
 	return a, nil
 }
+
+func GetArticleList(typeName string, size int) ([]*Article, error) {
+	order := "order by id "
+	switch rand.IntN(3) {
+	case 1:
+		order = "order by title "
+	case 2:
+		order = "order by created_at "
+	}
+	count, err := QueryArticleCount(typeName)
+	if err != nil {
+		return nil, err
+	}
+	offset := rand.IntN(count)
+	if count <= size {
+		offset = 0
+	}
+	if offset > 0 && offset > count-size {
+		offset = count - size
+	}
+	s := fmt.Sprintf("select * from article where type_name=? %s limit ?,?", order)
+	stmt, err := DB.Prepare(s)
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := stmt.Query(typeName, offset, size)
+	if err != nil {
+		return nil, err
+	}
+	var articles []*Article
+	for rows.Next() {
+		a := new(Article)
+		err = rows.Scan(&a.Id, &a.Title, &a.Summary, &a.Pic, &a.Content, &a.Author, &a.TypeName, &a.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		articles = append(articles, a)
+	}
+	return articles, nil
+}
 func createSiteTable() error {
 
 	_, err := DB.Exec(`create table if not exists website_config  (

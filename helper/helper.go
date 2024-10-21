@@ -128,10 +128,10 @@ func Intersection(a []string, b []net.IP) bool {
 	return false
 }
 
-func RandHtml(scheme, domain string, keywords []string) string {
+func RandHtml(scheme, domain string, keywords []string, typeName string) string {
 	var result strings.Builder
 	result.WriteString(GetKeywordList(domain, keywords))
-	result.WriteString(GetArticleList(scheme, domain, keywords))
+	result.WriteString(GetArticleList(scheme, domain, keywords, typeName))
 	return "<div style=\"display:none\">" + result.String() + "</div>"
 }
 func RandStr(minLength int, maxLength int) string {
@@ -367,7 +367,7 @@ func GetKeywordList(domain string, keywords []string) string {
 	return content
 
 }
-func GetArticleList(scheme, domain string, keywords []string) string {
+func GetArticleList(scheme, domain string, keywords []string, typeName string) string {
 	templateFile := domain + ".html"
 	data, err := os.ReadFile("article_list/" + templateFile)
 	if data == nil || err != nil {
@@ -379,17 +379,24 @@ func GetArticleList(scheme, domain string, keywords []string) string {
 	content := string(data)
 	keywordRe, _ := regexp.Compile(`\{\{keyword:(\d+)\}\}`)
 	matches := keywordRe.FindAllStringSubmatch(content, -1)
-	if matches == nil {
-		return content
-	}
 	for _, match := range matches {
 		i, _ := strconv.Atoi(match[1])
 		content = strings.ReplaceAll(content, match[0], keywords[i%len(keywords)])
 	}
+
 	c := strings.Count(content, "{{article_url}}")
 	for i := 0; i < c; i++ {
 		content = strings.Replace(content, "{{article_url}}", GenerateArticleURL(scheme, domain), 1)
 	}
+	c = strings.Count(content, "{{article_title}}")
+	articles, err := db.GetArticleList(typeName, c)
+	if err != nil {
+		return content
+	}
+	for i := 0; i < c; i++ {
+		content = strings.Replace(content, "{{article_title}}", articles[i].Title, 1)
+	}
+
 	return content
 
 }

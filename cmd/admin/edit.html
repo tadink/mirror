@@ -149,6 +149,7 @@
                                         <div class="layui-input-inline">
                                             <button type="button" class="layui-btn layui-btn-danger" id="back">返回</button>
                                             <button class="layui-btn" lay-submit lay-filter="save_config">立即提交</button>
+                                            <button class="layui-btn" lay-submit id="clear_cache">清除缓存</button>
                                         </div>
                                     </div>
                                 </form>
@@ -163,6 +164,27 @@
                                     jq('#back').on('click',function(){
                                         top.location.href='{{.admin_uri}}';
                                     });
+                                    jq('#clear_cache').on('click',function(){
+                                        layer.confirm("确定删除缓存吗？", { icon: 3, title: "提示" }, function (index) {
+                                        jq.ajax({
+                                            url: '{{.admin_uri}}/delete_cache?domain={{.proxy_config.Domain}}',
+                                            method: "get",
+                                            dataType: 'JSON',
+                                            success: function (res) {
+                                                if (res.code === 0) {
+                                                    layer.alert("删除成功");
+                                                } else {
+                                                    layer.alert("删除失败");
+                                                }
+                                            },
+                                            error: function (data) {
+                                                layer.alert("删除失败");
+                                            }   
+                                        });
+                                        layer.close(index);
+                                    });
+                                });
+
                                     //监听提交
                                     form.on('submit(save_config)', function (data) {
                                         jq.ajax({
