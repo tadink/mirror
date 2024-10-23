@@ -435,7 +435,7 @@ func createSiteTable() error {
   content text  NOT NULL,
   author varchar(255)  NOT NULL DEFAULT '',
   type_name varchar(255)  NOT NULL DEFAULT '',
-  created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS  title_idx on article(title);
 CREATE INDEX IF NOT EXISTS  created_at_idx on article(created_at);`)

@@ -269,13 +269,13 @@ func WrapResponseBody(response *http.Response, content []byte) {
 }
 func RenderTemplate(data []byte, article *db.Article, scheme, domain string) string {
 	replacer := strings.NewReplacer(
-		"{{artile_titile}}", article.Title,
+		"{{article_title}}", article.Title,
 		"{{article_pic}}", article.Pic,
 		"{{article_summary}}", article.Summary,
 		"{{article_content}}", article.Content,
 		"{{article_author}}", article.Author,
 		"{{article_type_name}}", article.TypeName,
-		"{{article_craeted_at}}", article.CreatedAt,
+		"{{article_created_at}}", article.CreatedAt,
 	)
 	content := replacer.Replace(string(data))
 	c := strings.Count(content, "{{article_url}}")
@@ -342,9 +342,9 @@ func GetArticleContent(scheme, domain, requestPath, articleType string, targetUr
 }
 func GetKeywordList(domain string, keywords []string) string {
 	templateFile := domain + ".html"
-	data, err := os.ReadFile("keywrod_list/" + templateFile)
+	data, err := os.ReadFile("keyword_list/" + templateFile)
 	if data == nil || err != nil {
-		data, err = os.ReadFile("keywrod_list/common.html")
+		data, err = os.ReadFile("keyword_list/common.html")
 		if err != nil {
 			return ""
 		}
